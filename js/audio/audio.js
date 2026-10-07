@@ -177,9 +177,20 @@
       src.start(t);
     }
 
+    // トカゲの足音(小さく乾いたクリック)
+    step_(species, pan) {
+      if (!this.enabled || !this.ctx || Math.random() < 0.4) return;
+      this._tone({ freq: 1800 + Math.random() * 900, type: 'triangle', vel: 0.025, attack: 0.001, dur: 0.05, pan });
+    }
+
     emerge(species, u, pan) {
       if (!this.enabled) return;
       const f = mtof(this.note(this.degreeOf(u), 1));
+      if (species === 'lizard') {
+        // 壁から這い出す: 乾いた音が駆け上がる
+        for (let k = 0; k < 4; k++) this._voice('lizard', this.note(this.degreeOf(u) + k, 0), 0.14, { pan, when: 0.6 + k * 0.09 });
+        return;
+      }
       if (species === 'bird') {
         this._flutter(pan, 0.9);
         this._voice('bird', this.note(this.degreeOf(u) + 3, 1), 0.22, { pan, when: 1.0 });
@@ -191,6 +202,12 @@
     landed(species, u, pan) {
       if (!this.enabled) return;
       const f = mtof(this.note(this.degreeOf(u), 1));
+      if (species === 'lizard') {
+        // 壁に潜る: 低いはじく音と、沈む音
+        this._voice('lizard', this.note(this.degreeOf(u), -1), 0.2, { pan });
+        this._tone({ freq: f * 0.5, freq2: f * 0.25, vel: 0.08, attack: 0.01, dur: 0.9, pan, when: 0.05 });
+        return;
+      }
       if (species === 'bird') {
         // 二声のさえずり
         this._voice('bird', this.note(this.degreeOf(u) + 4, 1), 0.2, { pan });

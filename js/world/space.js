@@ -5,6 +5,8 @@
 //   frame(x, y)           { pos, normal(内向き), tu(周方向), tv(長さ方向) }
 //   raycastWall(ray)      視線と内壁の交点の平面座標 { x, y, point } または null
 //   clampInside(pos)      カメラが壁の外に出ないようにする
+//   toAxis(pos)           その位置からチューブの中心線へ向かう単位ベクトル(生物の「背」の向き)
+//   periodicY             長さ方向も周期的か(トーラスの時だけ true)
 (function (TL) {
   'use strict';
 
@@ -53,6 +55,14 @@
       if (point.z < 0 || point.z > this.L) return null;
       return Object.assign(this.toPlane(point), { point });
     }
+
+    toAxis(pos, out = new THREE.Vector3()) {
+      out.set(-pos.x, -pos.y, 0);
+      if (out.lengthSq() < 1e-8) out.set(0, 1, 0);
+      return out.normalize();
+    }
+
+    get periodicY() { return false; }
 
     clampInside(pos, margin = 1.2) {
       const r = Math.hypot(pos.x, pos.y), max = this.R - margin;

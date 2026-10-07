@@ -79,8 +79,38 @@
     eyes: [[0.36, 0.045, 1], [0.36, -0.045, 1]],
   });
 
-  // 以降の段階で実装する種(メニューでは「準備中」として表示)
-  Species.register({ id: 'lizard', name: 'Lizard', ready: false, motion: 'crawl', voice: 'lizard' });
+  // トカゲ: 上から見た形。頭が +X、四本の脚、長い尾。壁から離れずに這う。
+  Species.register({
+    id: 'lizard',
+    name: 'Lizard',
+    ready: true,
+    motion: 'crawl',         // 壁面を這って別のタイルへ
+    color: '#6dff5a',
+    emissive: '#10a032',
+    voice: 'lizard',
+    length: 1.9,
+    thickness: 0.09,
+    pose: 'top',
+    deform: 'body',          // 体を左右にくねらせる
+    emergeTime: 1.6,
+    speed: 2.6,
+    range: [6, 16],
+    outline(THREE) {
+      const half = [
+        [0.5, 0], [0.45, 0.035], [0.38, 0.06], [0.31, 0.045], [0.25, 0.065],      // 鼻先〜頭〜首
+        [0.22, 0.1], [0.26, 0.19], [0.31, 0.21], [0.27, 0.25], [0.21, 0.22], [0.16, 0.1], // 前脚
+        [0.05, 0.08], [-0.06, 0.08],                                                      // 胴
+        [-0.09, 0.1], [-0.06, 0.2], [-0.01, 0.23], [-0.05, 0.27], [-0.13, 0.22], [-0.16, 0.1], // 後脚
+        [-0.19, 0.06], [-0.3, 0.035], [-0.42, 0.018], [-0.5, 0.0],                        // 尾
+      ];
+      const pts = half.concat(half.slice(1, -1).reverse().map(([x, y]) => [x, -y]));
+      const s = new THREE.Shape();
+      pts.forEach(([x, y], i) => (i ? s.lineTo(x, y) : s.moveTo(x, y)));
+      s.closePath();
+      return s;
+    },
+    eyes: [[0.4, 0.04, 1], [0.4, -0.04, 1]],
+  });
 
   TL.Species = Species;
 })(window.TL = window.TL || {});

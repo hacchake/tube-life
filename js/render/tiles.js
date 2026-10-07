@@ -123,10 +123,11 @@
       if (id >= 0) this.dirty.add(id);
     }
 
-    // 一瞬強く光らせる(種まき・着地の瞬間)
-    flash(id, amount = 3) {
+    // 一瞬強く光らせる(種まき・着地の瞬間、トカゲの足跡)。color を渡すとその色で光る。
+    flash(id, amount = 3, color = null) {
       const d = this.disp;
-      d[id * 4] = d[id * 4 + 1] = d[id * 4 + 2] = amount;
+      const c = color ? new THREE.Color(color).convertSRGBToLinear() : { r: 1, g: 1, b: 1 };
+      d[id * 4] = c.r * amount; d[id * 4 + 1] = c.g * amount; d[id * 4 + 2] = c.b * amount;
       d[id * 4 + 3] = 0.5;
       this.dirty.add(id);
     }

@@ -23,7 +23,7 @@
 
       scene.add(new THREE.HemisphereLight(0x8fb4ff, 0x1a0d22, 0.5));
       // カメラについていく灯り(泳いでいる生物を照らす)
-      this.headlamp = new THREE.PointLight(0xcfe3ff, 1.4, 40, 1.6);
+      this.headlamp = new THREE.PointLight(0xcfe3ff, 0.75, 40, 1.6);
       this.camera.add(this.headlamp);
       scene.add(this.camera);
 

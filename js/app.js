@@ -57,6 +57,12 @@
       this.input.bus.on('hover', (e) => { this.hoverId = e.cellId; this.tiles.setHover(e.cellId); });
       this.creatures.bus.on('emerge', (e) => this.onEmerge(e));
       this.creatures.bus.on('landed', (e) => this.onLanded(e));
+      // トカゲが這った跡のタイルがかすかに光る
+      this.creatures.bus.on('crawl', (e) => {
+        const cell = this.topology.locate(e.x, e.y);
+        if (cell && this.ca.cells[cell.id].state === TL.ST.IDLE) this.tiles.flash(cell.id, 0.7, e.creature.species.color);
+        this.audio.step_(e.creature.species.id, this.panOf({ id: cell ? cell.id : 0 }));
+      });
 
       const unlock = () => { if (this.audio.enabled) this.audio.ensure(); };
       window.addEventListener('pointerdown', unlock, true);
@@ -118,11 +124,12 @@
     }
 
     // Species の設定から、最初に生まれる種と、連鎖で次に生まれる種を決める
-    //   fish / bird: その種だけ    cycle: 魚 ⇄ 鳥 を交互に
+    //   fish / bird / lizard: その種だけ    cycle: 魚 → 鳥 → トカゲ → 魚 … の順に
     firstSpecies() { return this.settings.species === 'cycle' ? 'fish' : this.settings.species; }
     nextSpecies(prev) {
       if (this.settings.species !== 'cycle') return this.settings.species;
-      return prev === 'fish' ? 'bird' : 'fish';
+      const order = ['fish', 'bird', 'lizard'];
+      return order[(order.indexOf(prev) + 1) % order.length];
     }
 
     // 生物の行き先: 種ごとの距離だけ離れた待機中のタイル(カメラの向いている側に寄せる)
@@ -236,6 +243,22 @@
       this.stage.render();
       this.ui.frame(now);
       requestAnimationFrame((t) => this.loop(t));
+    }
+
+    // 開発用: 描画ループと関係なく時間を進める(画面が裏にある時の検証や自動テスト用)
+    advance(sec, dt = 1 / 60) {
+      for (let t = 0; t < sec; t += dt) {
+        if (this.settings.caOn) {
+          this.acc += dt;
+          const stepT = 1 / this.settings.speed;
+          while (this.acc >= stepT) { this.ca.step(); this.acc -= stepT; }
+        }
+        this.creatures.update(dt);
+        this.tiles.update(dt, this.ca.cells);
+        this.ripples.update(dt);
+        this.cameraCtl.update(dt);
+      }
+      this.stage.render();
     }
 
     persist() { TL.Store.save(STORE_KEY, this.settings); }
