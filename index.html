@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tube of Life</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="world"></div>
+
+<div id="title">
+  <h1>TUBE OF LIFE</h1>
+  <p>Flower of Life × Cellular Automaton × 生命体</p>
+</div>
+
+<p id="hint">壁のタイルに触れると、生命が始まる<br>
+  <span>ドラッグで見回す · WASD / 矢印で移動 · ホイールで前後 · M でメニュー</span></p>
+
+<pre id="debug" hidden></pre>
+
+<button id="menuBtn" aria-label="メニュー" title="メニュー (M)">
+  <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.1" opacity=".55"/></svg>
+</button>
+
+<aside id="panel">
+  <h2>設定</h2>
+  <label class="row"><span>CA</span><input type="checkbox" id="caToggle"></label>
+  <div class="row btns">
+    <button id="resetBtn">Reset</button>
+    <button id="seedBtn">Random Seed</button>
+    <span id="seedVal" class="mono"></span>
+  </div>
+  <label class="row"><span>Grid Type</span><select id="gridSelect"></select></label>
+  <label class="row"><span>Species</span><select id="speciesSelect"></select></label>
+  <label class="row"><span>Speed</span><input type="range" id="speedRange" min="1" max="20" step="1"><output id="speedVal" class="mono"></output></label>
+  <label class="row"><span>Sound</span><input type="checkbox" id="soundToggle"></label>
+  <label class="row"><span>Volume</span><input type="range" id="volumeRange" min="0" max="1" step="0.01"></label>
+  <label class="row"><span>Camera</span>
+    <select id="cameraSelect"><option value="free">Free(自由)</option><option value="drift">Drift(漂う)</option></select>
+  </label>
+  <label class="row"><span>自動で生命</span><input type="checkbox" id="ambientToggle"></label>
+  <label class="row"><span>Debug</span><input type="checkbox" id="debugToggle"></label>
+  <div class="row btns"><button id="midiBtn" title="Launchpad Mini MK3 などのパッドで、見ている画面の 8×8 区画を叩けます(実験的)">MIDI(実験的)</button></div>
+  <p class="keys">M メニュー · I デバッグ · Shift で速く移動 · Q/E 上下</p>
+</aside>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/shaders/CopyShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/postprocessing/EffectComposer.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/postprocessing/RenderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/postprocessing/ShaderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+
+<script src="js/core/core.js"></script>
+<script src="js/topology/topology.js"></script>
+<script src="js/ca/engine.js"></script>
+<script src="js/species/species.js"></script>
+<script src="js/world/space.js"></script>
+<script src="js/render/stage.js"></script>
+<script src="js/render/tiles.js"></script>
+<script src="js/render/creatures.js"></script>
+<script src="js/render/effects.js"></script>
+<script src="js/input/camera.js"></script>
+<script src="js/input/input.js"></script>
+<script src="js/audio/audio.js"></script>
+<script src="js/ui/ui.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
