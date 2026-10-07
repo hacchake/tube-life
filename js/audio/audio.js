@@ -152,15 +152,51 @@
 
     // ---------- 生物イベント ----------
 
+    // 羽音: 細かく震えるノイズ
+    _flutter(pan, when = 0, dur = 0.9) {
+      const ctx = this.ensure();
+      if (!ctx) return;
+      const t = ctx.currentTime + 0.01 + when;
+      const len = Math.floor(ctx.sampleRate * dur);
+      const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < len; i++) {
+        const k = i / ctx.sampleRate;
+        const beat = 0.5 + 0.5 * Math.sin(2 * Math.PI * 14 * k); // 羽ばたきの周期
+        d[i] = (Math.random() * 2 - 1) * beat * beat * (1 - i / len);
+      }
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass'; bp.frequency.value = 1400; bp.Q.value = 0.8;
+      const g = ctx.createGain();
+      g.gain.value = 0.12;
+      const p = ctx.createStereoPanner();
+      p.pan.value = clamp(pan, -1, 1);
+      src.connect(bp); bp.connect(g); g.connect(p); p.connect(this.dry);
+      src.start(t);
+    }
+
     emerge(species, u, pan) {
       if (!this.enabled) return;
       const f = mtof(this.note(this.degreeOf(u), 1));
+      if (species === 'bird') {
+        this._flutter(pan, 0.9);
+        this._voice('bird', this.note(this.degreeOf(u) + 3, 1), 0.22, { pan, when: 1.0 });
+        return;
+      }
       this._tone({ freq: f * 0.5, freq2: f * 1.5, vel: 0.1, attack: 0.4, dur: 1.8, vibrato: 0.02, pan }); // 泡が昇るような音
     }
 
     landed(species, u, pan) {
       if (!this.enabled) return;
       const f = mtof(this.note(this.degreeOf(u), 1));
+      if (species === 'bird') {
+        // 二声のさえずり
+        this._voice('bird', this.note(this.degreeOf(u) + 4, 1), 0.2, { pan });
+        this._voice('bird', this.note(this.degreeOf(u) + 2, 1), 0.16, { pan, when: 0.16 });
+        return;
+      }
       this._tone({ freq: f * 1.6, freq2: f * 0.8, vel: 0.12, attack: 0.005, dur: 0.5, pan }); // ぽちゃん
       this._voice(species, this.note(this.degreeOf(u) + 2, 1), 0.12, { pan, when: 0.12 });
     }

@@ -50,7 +50,9 @@
       grid.addEventListener('change', () => app.setGrid(grid.value));
 
       const sp = $('#speciesSelect');
-      sp.innerHTML = TL.Species.all.map((s) => `<option value="${s.id}"${s.ready ? '' : ' disabled'}>${s.name}${s.ready ? '' : '(準備中)'}</option>`).join('');
+      sp.innerHTML = TL.Species.all.filter((s) => s.ready).map((s) => `<option value="${s.id}">${s.name}</option>`).join('') +
+        '<option value="cycle">Fish ⇄ Bird(交互)</option>' +
+        TL.Species.all.filter((s) => !s.ready).map((s) => `<option value="${s.id}" disabled>${s.name}(準備中)</option>`).join('');
       sp.value = st.species;
       sp.addEventListener('change', () => { st.species = sp.value; app.persist(); });
 

@@ -18,7 +18,7 @@
     constructor() {
       const saved = TL.Store.load(STORE_KEY, {}) || {};
       this.settings = Object.assign({
-        caOn: true, speed: 7, grid: 'flower', species: 'fish', sound: true, volume: 0.6,
+        caOn: true, speed: 7, grid: 'flower', species: 'cycle', sound: true, volume: 0.6,
         cameraMode: 'free', ambient: true, debug: false, seed: (Math.random() * 1e9) | 0,
       }, saved);
 
@@ -117,15 +117,24 @@
       return clamp(p.x / 12, -0.9, 0.9);
     }
 
-    // 生物の行き先: 少し離れた待機中のタイル(カメラの向いている側に寄せる)
-    pickTarget(fromId) {
+    // Species の設定から、最初に生まれる種と、連鎖で次に生まれる種を決める
+    //   fish / bird: その種だけ    cycle: 魚 ⇄ 鳥 を交互に
+    firstSpecies() { return this.settings.species === 'cycle' ? 'fish' : this.settings.species; }
+    nextSpecies(prev) {
+      if (this.settings.species !== 'cycle') return this.settings.species;
+      return prev === 'fish' ? 'bird' : 'fish';
+    }
+
+    // 生物の行き先: 種ごとの距離だけ離れた待機中のタイル(カメラの向いている側に寄せる)
+    pickTarget(fromId, speciesId) {
+      const [near, far] = TL.Species.get(speciesId).range;
       const from = this.cellPos(fromId);
       const ahead = this.cameraCtl.forward().z >= 0 ? 1 : -1;
       const rng = this.rngFn;
       let best = null;
       for (let k = 0; k < 14; k++) {
         const dir = rng() < 0.7 ? ahead : -ahead;
-        const y = clamp(from.y + dir * (6 + rng() * 16), 4, this.space.L - 4);
+        const y = clamp(from.y + dir * (near + rng() * (far - near)), 4, this.space.L - 4);
         const cell = this.topology.locate(rng() * this.topology.Lx, y);
         if (!cell || cell.id === fromId) continue;
         best = cell;
@@ -134,25 +143,26 @@
       return best;
     }
 
-    spawnFrom(id, chain) {
-      const to = this.pickTarget(id);
+    spawnFrom(id, chain, species) {
+      const to = this.pickTarget(id, species);
       if (!to) return null;
       const p0 = this.cellPos(id), p1 = to.position;
-      return this.creatures.spawn({ id, x: p0.x, y: p0.y }, { id: to.id, x: p1.x, y: p1.y }, { species: this.settings.species, chain });
+      return this.creatures.spawn({ id, x: p0.x, y: p0.y }, { id: to.id, x: p1.x, y: p1.y }, { species, chain });
     }
 
     // ---------- イベント ----------
 
     // タイルを活性化 = 生命を植える(クリックでも MIDI でも同じ)
     activate(id, source) {
-      const cell = this.ca.seed(id, { species: this.settings.species, chain: 0, source });
+      const species = this.firstSpecies();
+      const cell = this.ca.seed(id, { species, chain: 0, source });
       this.selectedId = id;
       if (!cell) return;
       this.tiles.flash(id, 2);
       const p = this.cellPos(id);
       this.ripples.spawn(p.x, p.y, 0xbfe6ff, 5);
       this.audio.seed(this.uOf(cell), cell.species, this.panOf(cell));
-      this.spawnFrom(id, 0);
+      this.spawnFrom(id, 0, species);
       if (source === 'pointer' || source === 'midi') this.ui.hideHint();
       else this.cameraCtl.attract(this.worldOf(id), 0.12); // 自動で生まれた時だけ視線を少し寄せる
     }
@@ -176,17 +186,21 @@
       this.ripples.spawn(p.x, p.y, 0x9fffd0, 6, 1.9);
       this.audio.landed(creature.species.id, this.uOf(seeded), this.panOf(seeded));
       this.cameraCtl.attract(this.worldOf(id), 0.12);
-      // 連鎖: 深くなるほど続きにくい。種が成熟した時に次の生物が生まれる。
-      if (this.rngFn() < 0.92 * Math.pow(0.8, chain)) this.pendingSpawn.set(id, chain + 1);
+      // 連鎖: 深くなるほど続きにくい。広がった波の中から次の生物が生まれる。
+      if (this.rngFn() < 0.92 * Math.pow(0.8, chain)) {
+        this.pendingSpawn.set(id, { chain: chain + 1, species: this.nextSpecies(creature.species.id) });
+      }
     }
 
     onStep(ev) {
       this.audio.step(ev, (c) => this.uOf(c), (c) => this.panOf(c));
+      // 種から 2 リング以上広がったセルが成熟したら、そこから次の生物が生まれる(波が小さければ種から)
       for (const c of ev.matured) {
-        if (!this.pendingSpawn.has(c.id)) continue;
-        const chain = this.pendingSpawn.get(c.id);
-        this.pendingSpawn.delete(c.id);
-        this.spawnFrom(c.id, chain);
+        const p = this.pendingSpawn.get(c.origin);
+        if (!p || (c.generation < 2 && c.id !== c.origin)) continue;
+        if (c.id === c.origin && this.ca.cells.some((o) => o.origin === c.origin && o.generation >= 2 && o.state >= TL.ST.ACTIVATING && o.state <= TL.ST.GROWING)) continue;
+        this.pendingSpawn.delete(c.origin);
+        this.spawnFrom(c.id, p.chain, p.species);
       }
     }
 
