@@ -14,7 +14,7 @@
     { key: 'decay', k: 0.6, lift: 0.04 },
     { key: 'dead', k: 0, lift: 0 },
   ];
-  const SHRINK = { petal: 0.93, face: 0.9, hex: 0.9 };
+  const SHRINK = { petal: 0.93, face: 0.9, hex: 0.9, tri: 0.88 };
 
   class TileMesh {
     constructor(scene, space) {
@@ -36,9 +36,17 @@
       this.topology = topology;
       const space = this.space;
       const cells = topology.cells;
+      // 各セルの輪郭を三角形分割する(Escher の生物のような凹んだ形でも正しく塗れる)
+      const tris = cells.map((c) => {
+        const k = SHRINK[c.kind] || 0.96;
+        const { x: cx, y: cy } = c.position;
+        const pts = c.shape.map(([x, y]) => new THREE.Vector2(cx + (x - cx) * k, cy + (y - cy) * k));
+        if (THREE.ShapeUtils.isClockWise(pts)) pts.reverse();
+        return { pts, faces: THREE.ShapeUtils.triangulateShape(pts, []) };
+      });
       let nv = 0, nt = 0;
-      for (const c of cells) { nv += c.shape.length + 1; nt += c.shape.length; }
-      const pos = new Float32Array(nv * 3), base = new Float32Array(nv * 3), nrm = new Float32Array(nv * 2), col = new Float32Array(nv * 3);
+      for (const t of tris) { nv += t.pts.length; nt += t.faces.length; }
+      const pos = new Float32Array(nv * 3), base = new Float32Array(nv * 3), nrm = new Float32Array(nv * 3), col = new Float32Array(nv * 3);
       const index = new Uint32Array(nt * 3);
       this.start = new Uint32Array(cells.length);
       this.count = new Uint16Array(cells.length);
@@ -50,35 +58,33 @@
         base[vi * 3] = pos[vi * 3] = v.x;
         base[vi * 3 + 1] = pos[vi * 3 + 1] = v.y;
         base[vi * 3 + 2] = pos[vi * 3 + 2] = v.z;
-        const r = Math.hypot(v.x, v.y);
-        nrm[vi * 2] = -v.x / r; nrm[vi * 2 + 1] = -v.y / r;
+        const n = space.frame(x, y).normal; // 浮き上がる向き(壁の内向きの法線)
+        nrm[vi * 3] = n.x; nrm[vi * 3 + 1] = n.y; nrm[vi * 3 + 2] = n.z;
         return vi++;
       };
-      for (const c of cells) {
-        this.start[c.id] = vi;
-        const { x: cx, y: cy } = c.position;
-        const k = SHRINK[c.kind] || 0.92;
-        const center = put(cx, cy);
-        const first = vi;
-        for (const [x, y] of c.shape) put(cx + (x - cx) * k, cy + (y - cy) * k);
-        const n = c.shape.length;
-        for (let i = 0; i < n; i++) {
-          index[ti++] = center; index[ti++] = first + i; index[ti++] = first + ((i + 1) % n);
-        }
-        this.count[c.id] = n + 1;
-        // 輪郭線(タイルの模様)
-        for (let i = 0; i < n; i++) {
-          const a = c.shape[i], b = c.shape[(i + 1) % n];
+      const line = (pts, closed) => {
+        const n = pts.length;
+        for (let i = 0; i < (closed ? n : n - 1); i++) {
+          const a = pts[i], b = pts[(i + 1) % n];
           linePts.push(space.point(a[0], a[1], 0.01), space.point(b[0], b[1], 0.01));
         }
-      }
+      };
+      cells.forEach((c, i) => {
+        this.start[c.id] = vi;
+        const first = vi;
+        for (const p of tris[i].pts) put(p.x, p.y);
+        for (const f of tris[i].faces) { index[ti++] = first + f[0]; index[ti++] = first + f[1]; index[ti++] = first + f[2]; }
+        this.count[c.id] = tris[i].pts.length;
+        line(c.shape, true);                       // 輪郭線(タイルの模様)
+        if (c.decor) for (const d of c.decor) line(d, false); // 目やえらなどの模様
+      });
       // 待機中の色: 模様が見えるよう種類と場所で少しずつ変える
       this.baseColor = cells.map((c) => {
         const col0 = this.colors.idle.clone();
         const hsl = {};
         col0.getHSL(hsl);
-        const tone = c.kind === 'petal' ? 1.25 : c.kind === 'face' ? 0.75 : 1;
-        const hue = hsl.h + 0.035 * Math.sin(c.position.y * 0.05) + 0.02 * Math.sin((c.position.x / topology.Lx) * Math.PI * 2 * 3);
+        const tone = c.tone !== undefined ? [1, 1.45, 0.7][c.tone % 3] : c.kind === 'petal' ? 1.25 : c.kind === 'face' ? 0.75 : 1;
+        const hue = hsl.h + (c.tone !== undefined ? [0, 0.05, -0.06][c.tone % 3] : 0) + 0.035 * Math.sin(c.position.y * 0.05) + 0.02 * Math.sin((c.position.x / topology.Lx) * Math.PI * 2 * 3);
         return new THREE.Color().setHSL(hue, hsl.s, clamp(hsl.l * tone, 0, 1));
       });
       this.disp = new Float32Array(cells.length * 4); // r, g, b, lift(表示中の値)
@@ -148,8 +154,9 @@
       const r = d[i * 4], g = d[i * 4 + 1], b = d[i * 4 + 2], lift = d[i * 4 + 3];
       for (let k = s; k < s + n; k++) {
         col[k * 3] = r; col[k * 3 + 1] = g; col[k * 3 + 2] = b;
-        pos[k * 3] = this.base[k * 3] + this.nrm[k * 2] * lift;
-        pos[k * 3 + 1] = this.base[k * 3 + 1] + this.nrm[k * 2 + 1] * lift;
+        pos[k * 3] = this.base[k * 3] + this.nrm[k * 3] * lift;
+        pos[k * 3 + 1] = this.base[k * 3 + 1] + this.nrm[k * 3 + 1] * lift;
+        pos[k * 3 + 2] = this.base[k * 3 + 2] + this.nrm[k * 3 + 2] * lift;
       }
     }
 

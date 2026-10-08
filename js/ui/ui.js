@@ -43,7 +43,7 @@
       this.showSeed();
 
       const grid = $('#gridSelect');
-      const planned = [{ id: 'triangle', name: 'Triangle' }, { id: 'escher', name: 'Escher' }];
+      const planned = [];
       grid.innerHTML = TL.Topology.types.map((t) => `<option value="${t.id}">${t.name}</option>`).join('') +
         planned.map((t) => `<option value="${t.id}" disabled>${t.name}(準備中)</option>`).join('');
       grid.value = st.grid;

@@ -102,6 +102,36 @@
       for (const c of cells) delete c._b;
     }
 
+    // 輪郭の点を共有するセル同士をつなぐ(形が複雑なタイル用)。
+    // 隣り合うタイルは境界の点をまったく同じ位置に持つように作ってあるので、量子化して突き合わせる。
+    linkByVertices(quantum) {
+      const nq = Math.max(1, Math.round(this.Lx / quantum));
+      const q = this.Lx / nq;
+      const ny = this.periodicY ? Math.max(1, Math.round(this.Ly / q)) : 0;
+      const qy = ny ? this.Ly / ny : q;
+      const map = new Map();
+      const keysOf = (c) => {
+        const keys = new Set();
+        for (const [x, y] of c.shape) {
+          const kx = ((Math.round(x / q) % nq) + nq) % nq;
+          let ky = Math.round(y / qy);
+          if (ny) ky = ((ky % ny) + ny) % ny;
+          keys.add(kx + ',' + ky);
+        }
+        return keys;
+      };
+      const all = this.cells.map((c) => {
+        const keys = keysOf(c);
+        for (const k of keys) { if (!map.has(k)) map.set(k, []); map.get(k).push(c.id); }
+        return keys;
+      });
+      this.cells.forEach((c, i) => {
+        const set = new Set();
+        for (const k of all[i]) for (const id of map.get(k)) if (id !== c.id) set.add(id);
+        c.neighbors = [...set];
+      });
+    }
+
     // 中心セルからグラフ距離ごとのリング(0 = 中心, 1 = 第1リング …)
     rings(centerId, n) {
       const out = [[centerId]];

@@ -189,16 +189,18 @@
     }
 
     // from / to: { id, x, y }(平面座標)
-    // opts.outline: タイルの輪郭そのものを立体化する時の形(Escher)、opts.align: タイルの向きに合わせる
-    spawn(from, to, { species = 'fish', chain = 0, outline = null, outlineKey = null, eyes = null, align = false } = {}) {
+    // opts.tile: Escher のタイルから出る時の { shape, key, length, head, eyes }。
+    //   タイルの輪郭そのものを立体化し、出発・到着ではタイルと同じ向き(head)にぴったり重ねる。
+    spawn(from, to, { species = 'fish', chain = 0, tile = null } = {}) {
       if (this.active.length >= POOL_MAX) return null;
       const sp = TL.Species.get(species);
       if (!sp.ready) return null;
-      const key = outlineKey || sp.id;
+      const key = tile ? tile.key : sp.id;
       let c = this.pool.find((p) => p.key === key);
       if (c) this.pool.splice(this.pool.indexOf(c), 1);
-      else c = this._make(sp, outline, key);
-      if (eyes) this._setEyes(c, eyes, sp.thickness);
+      else c = this._make(sp, tile && tile.shape, key);
+      if (tile) this._setEyes(c, tile.eyes, sp.thickness);
+      c.length = tile ? tile.length : sp.length;
 
       const space = this.space;
       const f0 = space.frame(from.x, from.y), f1 = space.frame(to.x, to.y);
@@ -206,12 +208,13 @@
       const t0 = curve.getTangentAt(0), t1 = curve.getTangentAt(1);
       const p0 = curve.getPointAt(0);
       const w = WEIGHTS[sp.deform];
+      const tileDir = (f) => f.tu.clone().multiplyScalar(Math.cos(tile.head)).addScaledVector(f.tv, Math.sin(tile.head));
       Object.assign(c, {
         phase: 'emerge', t: 0, dur: sp.emergeTime, chain, from, to, curve, f0, f1,
         travelDur: clamp(curve.getLength() / sp.speed, 3, 9),
         // Escher のタイルから出る時・戻る時は、タイルと同じ向きにぴったり重ねる
-        qFlat0: flatQuat(f0.normal, align ? f0.tu : t0),
-        qFlat1: flatQuat(f1.normal, align ? f1.tu : t1),
+        qFlat0: flatQuat(f0.normal, tile ? tileDir(f0) : t0),
+        qFlat1: flatQuat(f1.normal, tile ? tileDir(f1) : t1),
         qTravel0: sp.motion === 'crawl' ? flatQuat(f0.normal, t0) : travelQuat(sp.pose, t0, space.toAxis(p0), 0),
         q: new THREE.Quaternion(),
         phaseOffset: this.rng() * 10,
@@ -228,7 +231,7 @@
     }
 
     _pose(c, pos, depth, emissive, amp, freq) {
-      const L = c.species.length;
+      const L = c.length;
       c.mesh.position.copy(pos);
       c.mesh.scale.set(L, L, L * clamp(depth, 0.03, 1));
       c.mat.emissiveIntensity = emissive;

@@ -83,6 +83,7 @@
       this.tiles.build(this.topology);
       this.picker.setTopology(this.topology);
       this.creatures.clear();
+      this.ripples.clear();
       this.pendingSpawn.clear();
       this.hoverId = this.selectedId = -1;
     }
@@ -150,18 +151,22 @@
       return best;
     }
 
+    // Escher のタイルからは、そのタイルの生物が(タイルの輪郭のまま)生まれる
     spawnFrom(id, chain, species) {
+      const tcell = this.topology.cells[id];
+      const tile = tcell.species ? TL.Escher.creatureOutline(tcell) : null;
+      if (tile) species = tcell.species;
       const to = this.pickTarget(id, species);
       if (!to) return null;
       const p0 = this.cellPos(id), p1 = to.position;
-      return this.creatures.spawn({ id, x: p0.x, y: p0.y }, { id: to.id, x: p1.x, y: p1.y }, { species, chain });
+      return this.creatures.spawn({ id, x: p0.x, y: p0.y }, { id: to.id, x: p1.x, y: p1.y }, { species, chain, tile });
     }
 
     // ---------- イベント ----------
 
     // タイルを活性化 = 生命を植える(クリックでも MIDI でも同じ)
     activate(id, source) {
-      const species = this.firstSpecies();
+      const species = this.topology.cells[id].species || this.firstSpecies();
       const cell = this.ca.seed(id, { species, chain: 0, source });
       this.selectedId = id;
       if (!cell) return;
@@ -181,6 +186,7 @@
     // 生物が別のタイルに着いた → そこが新しい種になる
     onLanded({ creature, cell, chain }) {
       let id = cell.id;
+      // Escher では、生物は同じ形のタイルにぴったり重なって戻る(着地点をずらさない)
       let seeded = this.ca.seed(id, { species: creature.species.id, chain: chain + 1, source: 'creature' });
       if (!seeded) {
         // 着地点が生きていたら、隣の待機中のタイルへ

@@ -28,6 +28,8 @@
       Object.assign(it, { t: 0, dur, size });
     }
 
+    clear() { for (const it of this.items) it.m.visible = false; }
+
     update(dt) {
       for (const it of this.items) {
         if (!it.m.visible) continue;
