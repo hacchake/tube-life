@@ -286,6 +286,7 @@
       T.add('face', px + f2.g[0], py + f2.g[1], f2.pts, { circle });
     });
     T.link((a, b) => (a === 'petal' && b === 'petal' ? 0.55 * s0 : a === 'face' && b === 'face' ? 0.6 * s0 : 0.35 * s0));
+    T.lifeRule = 'B2/S23';
     return T;
   });
 
@@ -339,6 +340,7 @@
     });
     T.linkByVertices(T.cellSize * 0.01, 2);
     T.waveEnergy = 11; // 隣が少ない(3〜5)ので、波が十分広がるよう生命力を多めに
+    T.lifeRule = 'B23/S34';
     return T;
   });
 
@@ -360,6 +362,7 @@
       }
     }
     T.link(() => 1.05 * s);
+    T.lifeRule = 'B25/S34';
     return T;
   });
 
@@ -376,6 +379,7 @@
       });
     });
     T.linkByVertices(T.cellSize * 0.02, 1);
+    T.lifeRule = 'B45/S236';
     return T;
   });
 

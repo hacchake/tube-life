@@ -25,7 +25,9 @@
         if (e.target.closest && e.target.closest('input, select')) return;
         if (e.code === 'KeyM') toggle();
         if (e.code === 'KeyI') { st.debug = !st.debug; $('#debugToggle').checked = st.debug; this.applyDebug(); app.persist(); }
-        if (e.code === 'Escape') panel.classList.remove('open');
+        if (e.code === 'Escape') { panel.classList.remove('open'); if (app.exhibit) app.setExhibit(false); }
+        if (e.code === 'KeyP') app.setExhibit(!app.exhibit);
+        if (e.code === 'KeyF') this.fullscreen();
       });
 
       const bindCheck = (sel, key, after) => {
@@ -34,9 +36,19 @@
         el.addEventListener('change', () => { st[key] = el.checked; if (after) after(el.checked); app.persist(); });
       };
       bindCheck('#caToggle', 'caOn');
-      bindCheck('#soundToggle', 'sound', (on) => { app.audio.enabled = on; if (on) app.audio.ensure(); });
+      bindCheck('#soundToggle', 'sound', (on) => app.audio.setEnabled(on));
       bindCheck('#ambientToggle', 'ambient');
       bindCheck('#debugToggle', 'debug', () => this.applyDebug());
+
+      const opts = (obj, sel) => Object.entries(obj).map(([k, v]) => `<option value="${k}"${k === sel ? ' selected' : ''}>${v.name}</option>`).join('');
+      const bindSelect = (sel, html, onChange) => { const el = $(sel); el.innerHTML = html; el.addEventListener('change', () => { onChange(el.value); app.persist(); }); return el; };
+      bindSelect('#ruleSelect', opts(TL.CA_RULES, st.caRule), (v) => app.setRule(v));
+      bindSelect('#themeSelect', opts(TL.VISUAL_THEMES, st.visualTheme), (v) => app.applyTheme(v));
+      bindSelect('#audioThemeSelect', opts(TL.AUDIO_THEMES, st.audioTheme), (v) => { st.audioTheme = v; app.audio.setTheme(v); });
+      bindSelect('#scaleSelect', '<option value="">テーマに合わせる</option>' + opts(TL.AUDIO_SCALES, st.audioScale), (v) => { st.audioScale = v; app.audio.scale = v || null; app.audio._retuneBed && app.audio.ctx && app.audio._retuneBed(); });
+      bindSelect('#patternSelect', opts(TL.AUDIO_PATTERNS, st.audioPattern), (v) => { st.audioPattern = v; app.audio.pattern = v; });
+      $('#exhibitBtn').addEventListener('click', () => { panel.classList.remove('open'); app.setExhibit(true); });
+      $('#fullBtn').addEventListener('click', () => this.fullscreen());
 
       $('#resetBtn').addEventListener('click', () => app.reset());
       $('#seedBtn').addEventListener('click', () => { app.randomSeed(); this.showSeed(); });
@@ -82,6 +94,11 @@
       });
     }
 
+    fullscreen() {
+      if (document.fullscreenElement) document.exitFullscreen();
+      else document.documentElement.requestFullscreen && document.documentElement.requestFullscreen().catch(() => {});
+    }
+
     showSeed() { $('#seedVal').textContent = '#' + this.app.settings.seed; }
 
     hideHint() { $('#hint').classList.add('fade'); }
@@ -108,7 +125,8 @@
       $('#debug').textContent = [
         `FPS          ${this.fps}`,
         `generation   ${app.ca.stepCount}`,
-        `active cells ${app.ca.activeCount} / ${app.topology.cells.length} (${app.topology.type})`,
+        `active cells ${app.ca.activeCount} / ${app.topology.cells.length} (${app.topology.type}, ${app.ca.rule})`,
+        `activity     ${app.activity().toFixed(2)}  audio ${app.audio.theme}/${app.audio.scaleId}/${app.audio.pattern}`,
         `living       ${species}`,
         `camera       ${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)} (${app.space.kind})`,
         `selected     ${selText}`,

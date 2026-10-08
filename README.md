@@ -21,18 +21,23 @@ Flower of Life × Escher風テセレーション × Cellular Automaton × 3D Tub
 | ホイール | 前後 |
 | M | 設定メニュー(右下のボタンでも開く) |
 | I | Debug 表示(FPS・世代・活動セル数・生物の数・カメラ位置・選択セルと近傍数) |
+| P | 展示モード(UI を隠し、カメラが生物を追い、生命が途切れない。Esc で戻る) |
+| F | 全画面 |
 
 ## 設定メニュー
 
 | 項目 | 内容 |
 |---|---|
 | CA | CA の計算の ON/OFF(生物は止めずに動く) |
+| CA Rule | Wave(波)/ Pulse(鼓動)/ Life(ライフゲーム)/ Spiral(らせん)/ Coral(珊瑚)/ Rain(雨) |
 | Reset / Random Seed | 全部消す / 新しい乱数の種で始め直していくつか生命を植える |
-| Grid Type | Flower of Life / Flower of Life(重層)/ Hex / Triangle / Escher: Fish / Bird / Lizard |
+| Grid Type | Flower of Life / Flower of Life(重層)/ Hex / Triangle / Escher: Fish / Bird / Lizard / 空と水(変身)/ 三種の帯(変身) |
 | Space | 円筒 / 曲がったチューブ / トーラス / 分岐(Y字) |
 | Species | Fish / Bird / Lizard / 順番(魚→鳥→トカゲ)/ Metamorphosis(変態)/ Ecosystem(複数生物) |
+| Look | インディゴ / 深海 / 残り火 / オーロラ / 版画(紙とインク) |
 | Speed / Sound / Volume | CA の速さ、音の ON/OFF と音量 |
-| Camera | Free(自由)/ Drift(チューブに沿ってゆっくり漂う) |
+| 音色 / 音階 / 鳴り方 | 結晶・ガムラン・聖歌・電子・深海 / 8 つの音階 / アンビエント・旋律・リズム・ドローン |
+| Camera | Free(自由)/ Drift(チューブに沿ってゆっくり漂う)/ Cinema(生物を追う) |
 | 自動で生命 | 静かな時に、見えている所で時々生命が生まれる |
 | MIDI(実験的) | Launchpad Mini MK3 などの 8×8 パッドで、見ている画面の 8×8 区画を叩ける(未検証) |
 
@@ -52,6 +57,17 @@ Flower of Life × Escher風テセレーション × Cellular Automaton × 3D Tub
 8. **複雑な Flower 構造** — 花びらを 2 つ、曲線三角形を 3 つに分けた重層の Flower of Life。向きごとに塗り分けて星形の模様が浮かぶ。
 9. **空間の拡張** — 曲がったチューブ・トーラス(長さ方向も一周してつながる)・分岐(幹と 2 本の枝。分かれ目は開口になり、波も生物も枝へ渡る)。
 
+10. **メディアアートとしての仕上げ**
+    - CA のルールを 6 種に(鼓動・ライフゲーム・らせん・珊瑚・雨)。ライフゲームは格子ごとに実際に計算して止まらず埋め尽くさない規則を選び、群れには寿命と広がりの上限がある。
+    - 音: 出来事を 3D の位置に置く立体音響(カメラが聴き手)。12 秒ごとに進むコードにすべての音が乗り、
+      テーマごとの背景の響きが生命の量に応じて開く。音色セット 5 種 × 音階 8 種 × 鳴り方 4 種。
+    - 映像: 最後の画面処理(色調・周辺減光・色のにじみ・フィルムの粒子)、漂う光の粒子、湧き上がる光の粒、
+      生物の光の軌跡と縁の発光、波が通ると光る輪郭線。配色テーマ 5 種(版画テーマは紙とインクの白黒)。
+    - Escher: 段ごとに鳥と魚(と トカゲ)が交互に並び、境目の曲線を共有して図と地が入れ替わる敷き詰め。
+      チューブの端ではただの縞と格子、奥へ進むほど輪郭が生物へ変身していく。各タイルに目・えら・羽の模様。
+      (実在の作品の写しではなく、並進タイリングの仕組みで作った独自の形)
+    - シネマカメラと展示モード。
+
 ## 構成
 
 ```
@@ -70,9 +86,11 @@ Space                js/world/space.js        平面 → 3D の巻き付け(円�
 3D Renderer          js/render/tiles.js       壁タイル(1 メッシュ、変化したセルだけ更新)
                      js/render/creatures.js   生物(プール、頂点シェーダーで尾・翼・くねりを重みで混ぜる)
                      js/render/metamorph.js   変態
-                     js/render/effects.js     波紋 / js/render/stage.js シーン・ブルーム
+                     js/render/effects.js     波紋 / js/render/stage.js シーン・ブルーム・画面処理
+                     js/render/fx.js          画面処理のシェーダー・漂う粒子・湧き上がる粒・光の軌跡
+                     js/render/themes.js      配色テーマ
  ↓
-Audio System         js/audio/audio.js        CA の各状態・生物ごとの音色・変態・出会い
+Audio System         js/audio/audio.js        立体音響・和声・背景の響き・音色セット・鳴り方
  ↓
 Input System         js/input/input.js        VirtualPointerInput(マウス)/ MidiPadInput(Launchpad Mini MK3、未検証)
                      js/input/camera.js       カメラ操作(Free / Drift、出来事への視線の引き寄せ)

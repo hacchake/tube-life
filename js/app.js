@@ -20,6 +20,7 @@
       this.settings = Object.assign({
         caOn: true, speed: 7, grid: 'flower', species: 'cycle', sound: true, volume: 0.6,
         cameraMode: 'free', ambient: true, debug: false, seed: (Math.random() * 1e9) | 0, space: 'cylinder',
+        caRule: 'wave', visualTheme: 'indigo', audioTheme: 'crystal', audioScale: '', audioPattern: 'ambient',
       }, saved);
 
       this.stage = new TL.Stage3D(document.getElementById('world'));
@@ -29,11 +30,19 @@
       const rng = () => this.rngFn();
 
       this.tiles = new TL.TileMesh(this.stage.scene, this.space);
+      // 映像の仕上げ: 漂う光の粒子・湧き上がる粒・生物の光の軌跡
+      this.motes = new TL.Motes(this.stage.scene);
+      this.motes.setSpace(this.space);
+      this.bursts = new TL.Bursts(this.stage.scene);
+      this.trails = new TL.Trails(this.stage.scene);
       this.creatures = new TL.CreatureSystem(this.stage.scene, this.space, rng);
       this.ripples = new TL.Ripples(this.stage.scene, this.space);
       this.audio = new TL.AudioSystem();
       this.audio.enabled = this.settings.sound;
       this.audio.volume = this.settings.volume;
+      this.audio.theme = TL.AUDIO_THEMES[this.settings.audioTheme] ? this.settings.audioTheme : 'crystal';
+      this.audio.scale = this.settings.audioScale || null;
+      this.audio.pattern = TL.AUDIO_PATTERNS[this.settings.audioPattern] ? this.settings.audioPattern : 'ambient';
 
       this.picker = new TL.Picker(this.camera, this.space);
       this.input = new TL.InputSystem();
@@ -42,6 +51,7 @@
 
       this.cameraCtl = new TL.CameraControls(this.camera, this.stage.dom, this.space);
       this.cameraCtl.mode = this.settings.cameraMode;
+      this.cameraCtl.getTargets = () => this.creatures.active; // 映画のようなカメラが追う相手
       this.cameraCtl.setPose(this.space.startPose());
 
       this.hoverId = -1;
@@ -51,6 +61,7 @@
       this.time = 0;
       this.acc = 0;
 
+      this.applyTheme(this.settings.visualTheme);
       this.buildWorld(this.settings.grid);
 
       this.input.bus.on('activate', (e) => this.activate(e.cellId, e.source));
@@ -61,7 +72,8 @@
       this.creatures.bus.on('morph', (e) => {
         const pl = this.space.toPlane(e.pos);
         this.ripples.spawn(pl.x, pl.y, e.to === 'bird' ? 0xffb070 : 0x9dff8a, 3, 1.2);
-        this.audio.morph(e.from, e.to, this.panOf({ id: this.topology.locate(pl.x, pl.y).id }));
+        this.bursts.emit(e.pos, this.space.toAxis(e.pos), TL.Species.get(e.to).color, 45, 2);
+        this.audio.morph(e.from, e.to, { u: pl.x / this.topology.Lx, pos: e.pos });
         this.cameraCtl.attract(e.pos, 0.1);
       });
       // 鳥がトカゲになって壁に降りた所
@@ -73,7 +85,7 @@
       this.creatures.bus.on('crawl', (e) => {
         const cell = this.topology.locate(e.x, e.y);
         if (cell && this.ca.cells[cell.id].state === TL.ST.IDLE) this.tiles.flash(cell.id, 0.7, e.creature.species.color);
-        this.audio.step_(e.creature.species.id, this.panOf({ id: cell ? cell.id : 0 }));
+        this.audio.footstep(e.creature.species.id, { u: e.x / this.topology.Lx, pos: e.creature.mesh.position });
       });
 
       const unlock = () => { if (this.audio.enabled) this.audio.ensure(); };
@@ -92,6 +104,7 @@
       const useSpace = (sp) => {
         this.space = sp;
         for (const m of [this.tiles, this.creatures, this.ripples, this.picker, this.cameraCtl]) m.space = sp;
+        this.motes.setSpace(sp);
         this.cameraCtl.setPose(sp.startPose());
       };
       if (kind === 'branch') {
@@ -105,19 +118,65 @@
       }
       this.ca = new TL.CAEngine(this.topology, () => this.rngFn());
       if (this.topology.waveEnergy) this.ca.energy = this.topology.waveEnergy;
+      this.ca.rule = TL.CA_RULES[this.settings.caRule] ? this.settings.caRule : 'wave';
       this.ca.bus.on('change', (ids) => this.tiles.markDirty(ids));
       this.ca.bus.on('step', (ev) => this.onStep(ev));
       this.tiles.build(this.topology);
       this.picker.setTopology(this.topology);
       this.creatures.clear();
       this.ripples.clear();
+      this.trails.clear();
       this.pendingSpawn.clear();
       this.hoverId = this.selectedId = -1;
+    }
+
+    // 見た目の世界観(タイル・輪郭線・霧・ブルーム・画面の色調・粒子)
+    applyTheme(id) {
+      this.settings.visualTheme = TL.VISUAL_THEMES[id] ? id : 'indigo';
+      const th = TL.VISUAL_THEMES[this.settings.visualTheme];
+      this.theme = th;
+      this.stage.setTheme(th);
+      this.tiles.setTheme(th);
+      this.motes.color.set(th.motes);
+      this.motes.mat.blending = th.ink ? THREE.NormalBlending : THREE.AdditiveBlending;
+      this.motes.mat.needsUpdate = true;
+      this.persist();
+    }
+
+    // CA のルール(生命の振る舞い)
+    setRule(id) {
+      this.settings.caRule = id;
+      this.ca.setRule(id);
+      this.creatures.clear();
+      this.pendingSpawn.clear();
+      this.tiles.markDirty(this.topology.cells.map((c) => c.id));
+      this.persist();
+    }
+
+    // 展示モード: UI を隠し、カメラは生物を追い、生命が途切れないようにする
+    setExhibit(on) {
+      this.exhibit = on;
+      document.body.classList.toggle('exhibit', on);
+      if (on) { this._prevCam = this.cameraCtl.mode; this.cameraCtl.mode = 'cinema'; this.cameraCtl.lastInput = -1e9; this.nextAmbient = 1; }
+      else if (this._prevCam) this.cameraCtl.mode = this._prevCam;
+    }
+
+    // 世界の活動量(0..1): 音の明るさ・画面の揺らぎ・粒子の輝きに使う
+    activity() {
+      return clamp(this.ca.activeCount / 450 + this.creatures.count * 0.05, 0, 1);
+    }
+
+    // 湧き上がる光の粒を、タイルの場所から
+    burstAt(id, color, n = 40, speed = 3) {
+      const p = this.cellPos(id);
+      const f = this.space.frame(p.x, p.y);
+      this.bursts.emit(f.pos.clone().addScaledVector(f.normal, 0.2), f.normal, color, n, speed);
     }
 
     // 空間の形(円筒 / 曲がったチューブ / トーラス)
     setSpace(kind) {
       this.settings.space = kind;
+      this.applyTheme(this.settings.visualTheme);
       this.buildWorld(this.settings.grid);
       this.cameraCtl.setPose(this.space.startPose());
       this.persist();
@@ -154,6 +213,9 @@
     worldOf(id, h = 0) { const p = this.cellPos(id); return this.space.point(p.x, p.y, h); }
     uOf(c) { return this.cellPos(c.id).x / this.topology.Lx; }
     // 音の左右: カメラから見て右にあるほど右へ
+    // 音を置く場所: 周方向の位置 u と 3D の位置
+    where(c) { return { u: this.uOf(c), pos: this.worldOf(c.id, 0.3) }; }
+
     panOf(c) {
       const p = this.worldOf(c.id).applyMatrix4(this.camera.matrixWorldInverse);
       return clamp(p.x / 12, -0.9, 0.9);
@@ -212,7 +274,7 @@
         return this.creatures.spawnMeta({ id, x: p0.x, y: p0.y }, { id: mid.id, x: mid.position.x, y: mid.position.y }, { id: to.id, x: to.position.x, y: to.position.y }, { chain });
       }
       const tile = tcell.species ? TL.Escher.creatureOutline(tcell) : null;
-      if (tile) species = tcell.species;
+      if (tcell.species) species = tcell.species; // Escher のタイルからはそのタイルの生物が生まれる
       const to = this.pickTarget(id, species);
       if (!to) return null;
       const p0 = this.cellPos(id), p1 = to.position;
@@ -230,14 +292,15 @@
       this.tiles.flash(id, 2);
       const p = this.cellPos(id);
       this.ripples.spawn(p.x, p.y, 0xbfe6ff, 5);
-      this.audio.seed(this.uOf(cell), cell.species, this.panOf(cell));
+      this.burstAt(id, this.theme.colors.activating, 50, 3.5);
+      this.audio.seed(this.where(cell), cell.species);
       this.spawnFrom(id, 0, species);
       if (source === 'pointer' || source === 'midi') this.ui.hideHint();
       else this.cameraCtl.attract(this.worldOf(id), 0.12); // 自動で生まれた時だけ視線を少し寄せる
     }
 
     onEmerge({ creature, cell }) {
-      this.audio.emerge(creature.species.id, cell.x / this.topology.Lx, this.panOf({ id: cell.id }));
+      this.audio.emerge(creature.species.id, this.where({ id: cell.id }));
     }
 
     // 生物が別のタイルに着いた → そこが新しい種になる
@@ -254,7 +317,8 @@
       this.tiles.flash(id, 1.8);
       const p = this.cellPos(id);
       this.ripples.spawn(p.x, p.y, 0x9fffd0, 6, 1.9);
-      this.audio.landed(creature.species.id, this.uOf(seeded), this.panOf(seeded));
+      this.burstAt(id, creature.species.color, 60, 4);
+      this.audio.landed(creature.species.id, this.where(seeded));
       this.cameraCtl.attract(this.worldOf(id), 0.12);
       // 連鎖: 深くなるほど続きにくい。広がった波の中から次の生物が生まれる。
       if (this.rngFn() < 0.92 * Math.pow(0.8, chain)) {
@@ -265,7 +329,7 @@
     }
 
     onStep(ev) {
-      this.audio.step(ev, (c) => this.uOf(c), (c) => this.panOf(c));
+      this.audio.step(ev, (c) => this.where(c));
       // 種から 2 リング以上広がったセルが成熟したら、そこから次の生物が生まれる(波が小さければ種から)
       for (const c of ev.matured) {
         const p = this.pendingSpawn.get(c.origin);
@@ -305,7 +369,8 @@
           if (seeded) {
             this.tiles.flash(cell.id, 1.6, '#ffffff');
             this.ripples.spawn(pl.x, pl.y, 0xffffff, 4, 1.4);
-            this.audio.encounter(this.panOf(seeded));
+            this.bursts.emit(mid, this.space.toAxis(mid), '#ffffff', 50, 2.5);
+            this.audio.meet({ u: pl.x / this.topology.Lx, pos: mid });
             this.cameraCtl.attract(mid, 0.12);
           }
           this.meetT = 2.5; // 出会いは続けて起こりすぎないように
@@ -320,17 +385,17 @@
       this.nextAmbient -= dt;
       if (this.nextAmbient > 0) return;
       this.nextAmbient = 7 + this.rngFn() * 7;
+      if (this.exhibit) this.nextAmbient = 4 + this.rngFn() * 5; // 展示中は途切れないよう少し頻繁に
       const crowd = this.settings.species === 'eco' ? 5 : 2;
-      if (this.cameraCtl.idleFor < 5 || this.creatures.count > crowd || this.ca.activeCount > 60) return;
+      if ((!this.exhibit && this.cameraCtl.idleFor < 5) || this.creatures.count > crowd || this.ca.activeCount > 60) return;
       const h = this.picker.pickNdc((this.rngFn() - 0.5) * 1.3, (this.rngFn() - 0.5) * 1.1);
       if (h) this.activate(h.cell.id, 'ambient');
     }
 
     // ---------- ループ ----------
 
-    loop(now) {
-      const dt = Math.min(0.05, (now - this.last) / 1000);
-      this.last = now;
+    // 1 フレームぶん世界を進める(描画ループと時間送りで共通)
+    tick(dt) {
       this.time += dt;
       if (this.settings.caOn) {
         this.acc += dt;
@@ -341,30 +406,32 @@
         this.ambient(dt);
         this.encounters(dt);
       }
+      const act = this.activity();
       this.cameraCtl.update(dt);
       this.creatures.update(dt); // 生物は CA 停止中も動く
       this.tiles.update(dt, this.ca.cells);
       this.ripples.update(dt);
-      this.stage.render();
+      this.motes.update(dt, this.time, act);
+      this.bursts.update(dt);
+      this.trails.update(this.creatures.active, dt);
+      this.audio.update(dt, act, this.camera);
+      return act;
+    }
+
+    loop(now) {
+      const dt = Math.min(0.05, (now - this.last) / 1000);
+      this.last = now;
+      const act = this.tick(dt);
+      this.stage.render(this.time, act);
       this.ui.frame(now);
       requestAnimationFrame((t) => this.loop(t));
     }
 
     // 開発用: 描画ループと関係なく時間を進める(画面が裏にある時の検証や自動テスト用)
     advance(sec, dt = 1 / 60) {
-      for (let t = 0; t < sec; t += dt) {
-        if (this.settings.caOn) {
-          this.acc += dt;
-          const stepT = 1 / this.settings.speed;
-          while (this.acc >= stepT) { this.ca.step(); this.acc -= stepT; }
-          this.encounters(dt);
-        }
-        this.creatures.update(dt);
-        this.tiles.update(dt, this.ca.cells);
-        this.ripples.update(dt);
-        this.cameraCtl.update(dt);
-      }
-      this.stage.render();
+      let act = 0;
+      for (let t = 0; t < sec; t += dt) act = this.tick(dt);
+      this.stage.render(this.time, act);
     }
 
     persist() { TL.Store.save(STORE_KEY, this.settings); }

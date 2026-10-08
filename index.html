@@ -26,6 +26,7 @@
 <aside id="panel">
   <h2>設定</h2>
   <label class="row"><span>CA</span><input type="checkbox" id="caToggle"></label>
+  <label class="row"><span>CA Rule</span><select id="ruleSelect"></select></label>
   <div class="row btns">
     <button id="resetBtn">Reset</button>
     <button id="seedBtn">Random Seed</button>
@@ -35,15 +36,20 @@
   <label class="row"><span>Space</span><select id="spaceSelect"></select></label>
   <label class="row"><span>Species</span><select id="speciesSelect"></select></label>
   <label class="row"><span>Speed</span><input type="range" id="speedRange" min="1" max="20" step="1"><output id="speedVal" class="mono"></output></label>
+  <label class="row"><span>Look</span><select id="themeSelect"></select></label>
   <label class="row"><span>Sound</span><input type="checkbox" id="soundToggle"></label>
+  <label class="row"><span>音色</span><select id="audioThemeSelect"></select></label>
+  <label class="row"><span>音階</span><select id="scaleSelect"></select></label>
+  <label class="row"><span>鳴り方</span><select id="patternSelect"></select></label>
   <label class="row"><span>Volume</span><input type="range" id="volumeRange" min="0" max="1" step="0.01"></label>
   <label class="row"><span>Camera</span>
-    <select id="cameraSelect"><option value="free">Free(自由)</option><option value="drift">Drift(漂う)</option></select>
+    <select id="cameraSelect"><option value="free">Free(自由)</option><option value="drift">Drift(漂う)</option><option value="cinema">Cinema(生物を追う)</option></select>
   </label>
   <label class="row"><span>自動で生命</span><input type="checkbox" id="ambientToggle"></label>
   <label class="row"><span>Debug</span><input type="checkbox" id="debugToggle"></label>
+  <div class="row btns"><button id="exhibitBtn" title="UI を隠し、カメラが生物を追い、生命が途切れない展示用の表示 (P)">展示モード</button><button id="fullBtn" title="全画面 (F)">全画面</button></div>
   <div class="row btns"><button id="midiBtn" title="Launchpad Mini MK3 などのパッドで、見ている画面の 8×8 区画を叩けます(実験的)">MIDI(実験的)</button></div>
-  <p class="keys">M メニュー · I デバッグ · Shift で速く移動 · Q/E 上下</p>
+  <p class="keys">M メニュー · I デバッグ · P 展示モード · F 全画面 · Shift で速く移動 · Q/E 上下</p>
 </aside>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
@@ -61,6 +67,8 @@
 <script src="js/species/species.js"></script>
 <script src="js/world/space.js"></script>
 <script src="js/world/branch.js"></script>
+<script src="js/render/themes.js"></script>
+<script src="js/render/fx.js"></script>
 <script src="js/render/stage.js"></script>
 <script src="js/render/tiles.js"></script>
 <script src="js/render/creatures.js"></script>

@@ -125,6 +125,10 @@
         Object.assign(shader.uniforms, uniforms);
         shader.vertexShader = 'uniform float uTime, uAmp, uFreq, wTail, wWing, wBody;\n' +
           shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n' + DEFORM);
+        // 縁の光(フレネル): 体の輪郭が見る角度で発光し、闇の中に形が浮かぶ
+        shader.fragmentShader = shader.fragmentShader.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+          float rimF = pow(1.0 - clamp(abs(dot(normalize(normal), normalize(vViewPosition))), 0.0, 1.0), 2.2);
+          totalEmissiveRadiance += (emissive + diffuseColor.rgb * 0.5) * rimF * 2.2;`);
       };
       mat.customProgramCacheKey = () => 'creature';
       const mesh = new THREE.Mesh(this._geometry(species, outline, key), mat);

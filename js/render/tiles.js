@@ -23,12 +23,39 @@
       this.dirty = new Set();
       this.hover = -1;
       this.colors = {};
-      this.setColors(TL.STATE_COLORS);
+      this.setTheme(TL.VISUAL_THEMES.indigo);
     }
 
-    setColors(hexes) {
-      for (const k in hexes) this.colors[k] = new THREE.Color(hexes[k]).convertSRGBToLinear(); // 頂点色はリニア空間
-      if (this.topology) for (let i = 0; i < this.topology.cells.length; i++) this.dirty.add(i);
+    // 配色テーマ: 状態の色・塗り分け(tones)・輪郭線
+    setTheme(theme) {
+      this.theme = theme;
+      for (const k in theme.colors) this.colors[k] = new THREE.Color(theme.colors[k]).convertSRGBToLinear(); // 頂点色はリニア空間
+      this.tones = theme.tones ? theme.tones.map((h) => new THREE.Color(h).convertSRGBToLinear()) : null;
+      this.lineColor = new THREE.Color(theme.line).convertSRGBToLinear();
+      if (this.topology) {
+        this._baseColors();
+        this.lines.material.opacity = theme.lineOpacity;
+        this.lines.material.blending = theme.ink ? THREE.NormalBlending : THREE.AdditiveBlending;
+        for (let i = 0; i < this.topology.cells.length; i++) this.dirty.add(i);
+      }
+    }
+
+    // 待機中の色: 模様が見えるよう種類と場所で少しずつ変える(tones があればその色で塗り分け)
+    _baseColors() {
+      const cells = this.topology.cells, Lx = this.topology.Lx;
+      this.baseColor = cells.map((c) => {
+        if (this.tones) {
+          const t = c.tone !== undefined ? c.tone : c.kind === 'petal' || c.kind === 'half' ? 0 : c.kind === 'face' || c.kind === 'piece' ? 1 : (c.id % 2);
+          const col = this.tones[t % this.tones.length].clone();
+          return col.multiplyScalar(1 + 0.04 * Math.sin(c.position.y * 0.07)); // 紙のむら
+        }
+        const col0 = this.colors.idle.clone();
+        const hsl = {};
+        col0.getHSL(hsl);
+        const tone = c.tone !== undefined ? [1, 1.45, 0.7][c.tone % 3] : c.kind === 'petal' ? 1.25 : c.kind === 'face' ? 0.75 : 1;
+        const hue = hsl.h + (c.tone !== undefined ? [0, 0.05, -0.06][c.tone % 3] : 0) + 0.035 * Math.sin(c.position.y * 0.05) + 0.02 * Math.sin((c.position.x / Lx) * Math.PI * 2 * 3);
+        return new THREE.Color().setHSL(hue, hsl.s, clamp(hsl.l * tone, 0, 1));
+      });
     }
 
     build(topology) {
@@ -51,6 +78,8 @@
       this.start = new Uint32Array(cells.length);
       this.count = new Uint16Array(cells.length);
       const linePts = [];
+      this.lineStart = new Uint32Array(cells.length);
+      this.lineCount = new Uint32Array(cells.length);
       const v = new THREE.Vector3();
       let vi = 0, ti = 0;
       const put = (x, y) => {
@@ -75,18 +104,12 @@
         for (const p of tris[i].pts) put(p.x, p.y);
         for (const f of tris[i].faces) { index[ti++] = first + f[0]; index[ti++] = first + f[1]; index[ti++] = first + f[2]; }
         this.count[c.id] = tris[i].pts.length;
+        this.lineStart[c.id] = linePts.length;
         line(c.shape, true);                       // 輪郭線(タイルの模様)
-        if (c.decor) for (const d of c.decor) line(d, false); // 目やえらなどの模様
+        if (c.decor) for (const d of c.decor) line(d, false); // 目やえら・羽などの模様
+        this.lineCount[c.id] = linePts.length - this.lineStart[c.id];
       });
-      // 待機中の色: 模様が見えるよう種類と場所で少しずつ変える
-      this.baseColor = cells.map((c) => {
-        const col0 = this.colors.idle.clone();
-        const hsl = {};
-        col0.getHSL(hsl);
-        const tone = c.tone !== undefined ? [1, 1.45, 0.7][c.tone % 3] : c.kind === 'petal' ? 1.25 : c.kind === 'face' ? 0.75 : 1;
-        const hue = hsl.h + (c.tone !== undefined ? [0, 0.05, -0.06][c.tone % 3] : 0) + 0.035 * Math.sin(c.position.y * 0.05) + 0.02 * Math.sin((c.position.x / topology.Lx) * Math.PI * 2 * 3);
-        return new THREE.Color().setHSL(hue, hsl.s, clamp(hsl.l * tone, 0, 1));
-      });
+      this._baseColors();
       this.disp = new Float32Array(cells.length * 4); // r, g, b, lift(表示中の値)
       cells.forEach((c, i) => {
         const b = this.baseColor[i];
@@ -103,12 +126,19 @@
       this.mesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }));
       this.scene.add(this.mesh);
 
+      // 輪郭線は頂点色: 波が通るとそのセルの輪郭も光る
       const lg = new THREE.BufferGeometry().setFromPoints(linePts);
-      this.lines = new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: 0x6f8cff, transparent: true, opacity: 0.32 }));
+      this.lineCol = new Float32Array(linePts.length * 3);
+      lg.setAttribute('color', new THREE.BufferAttribute(this.lineCol, 3));
+      this.lines = new THREE.LineSegments(lg, new THREE.LineBasicMaterial({
+        vertexColors: true, transparent: true, opacity: this.theme.lineOpacity, depthWrite: false,
+        blending: this.theme.ink ? THREE.NormalBlending : THREE.AdditiveBlending,
+      }));
       this.scene.add(this.lines);
 
       for (let i = 0; i < cells.length; i++) this._write(i);
       g.attributes.color.needsUpdate = true;
+      lg.attributes.color.needsUpdate = true;
     }
 
     dispose() {
@@ -158,6 +188,13 @@
         pos[k * 3 + 1] = this.base[k * 3 + 1] + this.nrm[k * 3 + 1] * lift;
         pos[k * 3 + 2] = this.base[k * 3 + 2] + this.nrm[k * 3 + 2] * lift;
       }
+      // 輪郭線: 待機中はテーマの線の色、生きている間はタイルの色で強く光る
+      const base = this.baseColor[i];
+      const glow = Math.max(0, Math.max(Math.abs(r - base.r), Math.abs(g - base.g), Math.abs(b - base.b)));
+      const w = Math.min(1, glow * 2.5), L = this.lineColor, boost = this.theme.ink ? 0.6 : 1.9;
+      const lr = L.r * (1 - w) + r * boost * w, lgc = L.g * (1 - w) + g * boost * w, lb = L.b * (1 - w) + b * boost * w;
+      const lc = this.lineCol;
+      for (let k = this.lineStart[i], e = k + this.lineCount[i]; k < e; k++) { lc[k * 3] = lr; lc[k * 3 + 1] = lgc; lc[k * 3 + 2] = lb; }
     }
 
     update(dt, caCells) {
@@ -177,6 +214,7 @@
       }
       this.geometry.attributes.color.needsUpdate = true;
       this.geometry.attributes.position.needsUpdate = true;
+      this.lines.geometry.attributes.color.needsUpdate = true;
     }
   }
 

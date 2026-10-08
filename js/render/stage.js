@@ -1,4 +1,4 @@
-// 描画の土台: シーン・カメラ・ライト・霧・発光(ブルーム)。
+// 描画の土台: シーン・カメラ・ライト・霧・発光(ブルーム)・最後の画面処理(色調・周辺減光・粒子)。
 (function (TL) {
   'use strict';
 
@@ -21,22 +21,43 @@
 
       this.camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.05, 400);
 
-      scene.add(new THREE.HemisphereLight(0x8fb4ff, 0x1a0d22, 0.5));
+      this.hemi = new THREE.HemisphereLight(0x8fb4ff, 0x1a0d22, 0.5);
+      scene.add(this.hemi);
       // カメラについていく灯り(泳いでいる生物を照らす)
       this.headlamp = new THREE.PointLight(0xcfe3ff, 0.75, 40, 1.6);
       this.camera.add(this.headlamp);
       scene.add(this.camera);
 
-      // 発光: 明るい所だけをにじませる(読み込めない環境では素の描画)
+      // 発光: 明るい所だけをにじませ、最後に画面全体の色調を整える(読み込めない環境では素の描画)
       if (THREE.EffectComposer && THREE.UnrealBloomPass) {
         const composer = new THREE.EffectComposer(renderer);
         composer.addPass(new THREE.RenderPass(scene, this.camera));
         this.bloom = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.6, 0.45, 0.32);
         composer.addPass(this.bloom);
+        if (THREE.ShaderPass && TL.GradeShader) {
+          this.grade = new THREE.ShaderPass(TL.GradeShader);
+          composer.addPass(this.grade);
+        }
         this.composer = composer;
       }
 
       window.addEventListener('resize', () => this.resize());
+    }
+
+    setTheme(theme) {
+      const bg = new THREE.Color(theme.bg);
+      this.scene.background = bg;
+      this.scene.fog.color = bg.clone();
+      this.scene.fog.density = theme.fog;
+      if (this.bloom) [this.bloom.strength, this.bloom.radius, this.bloom.threshold] = theme.bloom;
+      if (this.grade) {
+        const u = this.grade.uniforms;
+        u.uTint.value.set(theme.tint);
+        u.uShadow.value.set(theme.shadow);
+        u.uGrain.value = theme.grain;
+        u.uVignette.value = theme.vignette;
+      }
+      this.hemi.intensity = theme.ink ? 0.9 : 0.5;
     }
 
     resize() {
@@ -47,7 +68,12 @@
       if (this.composer) this.composer.setSize(w, h);
     }
 
-    render() {
+    render(time = 0, activity = 0) {
+      if (this.grade) {
+        this.grade.uniforms.uTime.value = time;
+        this.grade.uniforms.uPulse.value = activity;
+        this.grade.uniforms.uAberration.value = 0.0015 + activity * 0.003; // 活動が増えるとわずかに揺らぐ
+      }
       if (this.composer) this.composer.render();
       else this.renderer.render(this.scene, this.camera);
     }

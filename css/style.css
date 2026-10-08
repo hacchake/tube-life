@@ -65,3 +65,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #020309; col
 #panel .btns { flex-wrap: wrap; }
 #seedVal { font-size: 11px; color: var(--muted); }
 #panel .keys { margin: 10px 0 0; font-size: 11px; color: var(--muted); }
+
+/* 展示モード: 作品だけを見せる */
+body.exhibit #panel, body.exhibit #menuBtn, body.exhibit #hint, body.exhibit #title, body.exhibit #debug { display: none !important; }
+body.exhibit #world canvas { cursor: none; }

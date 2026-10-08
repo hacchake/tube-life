@@ -169,8 +169,83 @@
     }
     // 角を共有するタイル同士が隣(正方形格子 = 8、六角形格子 = 6)
     T.linkByVertices(T.cellSize * 0.02);
+    T.lifeRule = p.lattice === 'square' ? 'B34/S34' : 'B25/S34';
     // decor の x も周期化(Topology.add は shape しか直さない)
     return T;
+  }
+
+  // ---------- 段の重なり(空と水 / 三種の帯)と変身 ----------
+  // 段ごとに違う生物が並ぶ正方形格子。段と段の境目の曲線を両側の生物が共有するので、
+  // 鳥の翼の膨らみがそのまま上の魚の腹の凹みになる(図と地が入れ替わる)。
+  // 曲線の振れ幅 amp を長さ方向で変えると、端ではただの市松模様、奥へ進むほど生物へ変身していく。
+  const H = { // 段の境目(下の段の上辺 = 上の段の下辺)。正 = 上へ膨らむ
+    BF: (t) => env(t) * (0.46 * bump(t, 0.33, 0.1) - 0.24 * bump(t, 0.74, 0.12)),   // 鳥の上の翼 / 魚の腹
+    FB: (t) => env(t) * (-0.44 * bump(t, 0.62, 0.1) + 0.17 * bump(t, 0.22, 0.07)),  // 鳥の下の翼 / 魚の背びれ
+    FL: (t) => env(t) * (-0.32 * bump(t, 0.25, 0.06) - 0.32 * bump(t, 0.72, 0.06) + 0.2 * bump(t, 0.48, 0.07)), // トカゲの下の脚 / 魚の背びれ
+    LB: (t) => env(t) * (0.32 * bump(t, 0.25, 0.06) + 0.32 * bump(t, 0.72, 0.06) - 0.4 * bump(t, 0.5, 0.09)),   // トカゲの上の脚 / 鳥の下の翼
+  };
+  const V = { // 段の中の縦の辺(右 = 頭、左はその凹み)
+    bird: (t) => env(t) * (0.26 * bump(t, 0.55, 0.07) - 0.08 * bump(t, 0.2, 0.07) - 0.08 * bump(t, 0.85, 0.07)),
+    fish: (t) => Math.pow(env(t), 1.4) * 0.4 * bump(t, 0.5, 0.18),
+    lizard: (t) => env(t) * (0.3 * bump(t, 0.5, 0.09) - 0.1 * bump(t, 0.2, 0.05)),
+  };
+  const BANDS = {
+    sky: { name: 'Escher: 空と水(変身)', seq: ['bird', 'fish'], h: ['BF', 'FB'] },
+    trio: { name: 'Escher: 三種の帯(変身)', seq: ['bird', 'fish', 'lizard'], h: ['BF', 'FL', 'LB'] },
+  };
+  // 段の中の模様(タイルの左下を原点とする 0..1 の座標)
+  const DECOR = {
+    bird: [circle(1.04, 0.56, 0.045), [[0.3, 0.62], [0.42, 0.78], [0.5, 0.95]], [[0.36, 0.55], [0.52, 0.66]], [[0.55, 0.42], [0.62, 0.2], [0.66, 0.05]]],
+    fish: [circle(1.12, 0.55, 0.06), [[0.9, 0.3], [0.97, 0.5], [0.9, 0.72]], [[0.3, 0.42], [0.48, 0.5], [0.3, 0.58]], [[0.5, 0.4], [0.68, 0.5], [0.5, 0.6]]],
+    lizard: [circle(1.08, 0.58, 0.045), circle(1.08, 0.44, 0.045), [[0.15, 0.5], [0.4, 0.55], [0.65, 0.48], [0.88, 0.52]]],
+  };
+
+  function buildBands(kind, Lx, Ly, around, opts) {
+    const band = BANDS[kind];
+    const P = band.seq.length;
+    const T = new TL.Topology('escher-' + kind, Lx, Ly, !!opts.periodicY);
+    const s = Lx / around;
+    T.cellSize = s;
+    let rows = Math.floor(Ly / s);
+    if (T.periodicY) { rows = Math.max(P, Math.round(Ly / s / P) * P); T.Ly = rows * s; }
+    const N = 18;
+    // 長さ方向の変身の度合い: 端はただの格子、奥ほど生物
+    const ampAt = (y) => {
+      const L = T.Ly;
+      if (T.periodicY) return 0.5 - 0.5 * Math.cos((2 * Math.PI * y) / L);
+      const a = TL.util.smooth((y - 6) / 38), b = TL.util.smooth((L - 6 - y) / 38);
+      return Math.min(a, b);
+    };
+    const hCurve = (r) => H[band.h[((r % P) + P) % P]]; // 段 r の上辺(= 段 r+1 の下辺)
+    for (let r = 0; r < rows; r++) {
+      const sp = band.seq[r % P];
+      const yb = r * s, yt = (r + 1) * s;
+      const aB = ampAt(yb), aT = ampAt(yt), aR = ampAt((r + 0.5) * s);
+      const g0 = hCurve(r - 1), g1 = hCurve(r), f = V[sp];
+      for (let i = 0; i < around; i++) {
+        const x0 = i * s;
+        const pts = [];
+        for (let k = 0; k < N; k++) { const t = k / N; pts.push([x0 + t * s, yb + aB * g0(t) * s]); }                 // 下辺
+        for (let k = 0; k < N; k++) { const t = k / N; pts.push([x0 + s + aR * f(t) * s, yb + t * s]); }             // 右辺
+        for (let k = 0; k < N; k++) { const t = 1 - k / N; pts.push([x0 + t * s, yt + aT * g1(t) * s]); }            // 上辺
+        for (let k = 0; k < N; k++) { const t = 1 - k / N; pts.push([x0 + aR * f(t) * s, yb + t * s]); }             // 左辺
+        const cx = x0 + 0.5 * s, cy = yb + 0.5 * s;
+        T.add('creature', cx, cy, pts.map(([x, y]) => [x - cx, y - cy]), {
+          species: sp,
+          tone: sp === 'bird' ? 1 : sp === 'fish' ? 0 : 2, // 鳥は暗く、魚は明るく(図と地)
+          amp: aR,
+          // 模様は変身が進んでから現れる
+          decor: aR > 0.55 ? DECOR[sp].map((d) => d.map(([u, v]) => [x0 + u * s, yb + v * s])) : [],
+          band: { scale: s, row: r },
+        });
+      }
+    }
+    T.linkByVertices(s * 0.02);
+    T.lifeRule = 'B34/S34';
+    return T;
+  }
+  for (const [id, b] of Object.entries(BANDS)) {
+    TL.Topology.register('escher-' + id, b.name, (Lx, Ly, around, opts) => buildBands(id, Lx, Ly, Math.max(6, Math.round(around * 0.8)), opts));
   }
 
   for (const [id, name] of [['fish', 'Escher: Fish'], ['bird', 'Escher: Bird'], ['lizard', 'Escher: Lizard']]) {
@@ -181,6 +256,7 @@
   // 壁に平たく置いた時に輪郭がタイルとぴったり重なるよう、頭の向き head だけ回し、Y を反転する
   // (平たい姿勢では生物の Y が壁の -長さ方向 を向くため)。
   function creatureOutline(cell) {
+    if (cell.band) return bandOutline(cell);
     const p = proto(cell.species);
     const c = Math.cos(-p.head), s = Math.sin(-p.head);
     const rot = ([x, y]) => [x * c - y * s, x * s + y * c];
@@ -205,6 +281,30 @@
       else eyes.push([rx, ry, 1], [rx, ry, -1]);
     }
     return { shape, key: 'escher-' + cell.species, length: L * cell.proto.scale, head: p.head, eyes };
+  }
+
+  // 段のタイル: そのタイル自身の輪郭を立体化する(まだ変身しきっていない所では、種の形で出る)
+  function bandOutline(cell) {
+    if (cell.amp < 0.5) return null;
+    const cx = cell.position.x, cy = cell.position.y;
+    const rel = cell.shape.map(([x, y]) => [x - cx, y - cy]);
+    let x0 = Infinity, x1 = -Infinity;
+    for (const [x] of rel) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); }
+    const L = x1 - x0;
+    const shape = new THREE.Shape();
+    rel.forEach(([x, y], i) => (i ? shape.lineTo(x / L, -y / L) : shape.moveTo(x / L, -y / L)));
+    shape.closePath();
+    const top = TL.Species.get(cell.species).pose === 'top';
+    const eyes = [];
+    for (const d of cell.decor || []) {
+      const [fx, fy] = d[0], [lx, ly] = d[d.length - 1];
+      if (Math.hypot(fx - lx, fy - ly) > 1e-6) continue;
+      let ex = 0, ey = 0;
+      for (const [x, y] of d) { ex += x; ey += y; }
+      ex = (ex / d.length - cx) / L; ey = -(ey / d.length - cy) / L;
+      if (top) eyes.push([ex, ey, 1]); else eyes.push([ex, ey, 1], [ex, ey, -1]);
+    }
+    return { shape, key: 'band-' + cell.species + '-' + cell.band.row, length: L, head: 0, eyes };
   }
 
   TL.Escher = { proto, creatureOutline };

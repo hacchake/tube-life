@@ -105,8 +105,37 @@
       if (k.has('KeyQ')) acc.y -= 1;
       if (acc.lengthSq()) this.vel.addScaledVector(acc.normalize(), sp * dt * 4);
 
+      // シネマ: 操作が無い間、生物を後ろ斜めから追い、時々別の生物に乗り換える
+      let filmed = false;
+      if (this.mode === 'cinema' && this.idleFor > 3 && this.getTargets) {
+        const list = this.getTargets().filter((c) => c.mesh.visible && c.phase !== 'fade');
+        this.followT = (this.followT || 0) + dt;
+        if (!this.follow || !list.includes(this.follow) || this.followT > 13) {
+          this.follow = list.length ? list[Math.floor(Math.random() * list.length)] : null;
+          this.followT = 0;
+          this.side = Math.random() < 0.5 ? -1 : 1;
+        }
+        if (this.follow) {
+          filmed = true;
+          const p = this.follow.mesh.position;
+          const fwd = new THREE.Vector3(1, 0, 0).applyQuaternion(this.follow.mesh.quaternion);
+          const up = this.space.toAxis(p);
+          const sideV = new THREE.Vector3().crossVectors(fwd, up).normalize();
+          const t = performance.now() / 1000;
+          const want = p.clone().addScaledVector(fwd, -6.5).addScaledVector(up, 2.2 + Math.sin(t * 0.3)).addScaledVector(sideV, this.side * (2.5 + Math.sin(t * 0.21) * 1.5));
+          this.space.clampInside(want, 1.4);
+          this.camera.position.lerp(want, 1 - Math.exp(-dt * 0.9));
+          const d = p.clone().sub(this.camera.position).normalize();
+          let dy = Math.atan2(-d.x, -d.z) - this.yaw;
+          dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+          this.yaw += dy * (1 - Math.exp(-dt * 2.2));
+          this.pitch += (Math.asin(clamp(d.y, -1, 1)) - this.pitch) * (1 - Math.exp(-dt * 2.2));
+          this.vel.set(0, 0, 0);
+        }
+      }
+
       // 漂うモード: 操作が無い間、チューブの中心線に沿ってゆっくり進み、少しだけ見回す
-      if (this.mode === 'drift' && this.idleFor > 3) {
+      if ((this.mode === 'drift' || (this.mode === 'cinema' && !filmed)) && this.idleFor > 3) {
         const y = this.space.toPlane(this.camera.position).y;
         if (!this.space.periodicY) {
           const b = this.space.driftBounds ? this.space.driftBounds(y) : { lo: 12, hi: this.space.L - 12 };

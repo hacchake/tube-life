@@ -203,6 +203,7 @@
       }
     }
     if (parts[0].waveEnergy) T.waveEnergy = parts[0].waveEnergy;
+    if (parts[0].lifeRule) T.lifeRule = parts[0].lifeRule;
     // セル探し: y からチューブを決めて、そのチューブの Topology で探す
     T.locate = function (x, y) {
       const seg = space.segOf(y);
