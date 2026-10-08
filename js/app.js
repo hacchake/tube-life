@@ -18,7 +18,7 @@
     constructor() {
       const saved = TL.Store.load(STORE_KEY, {}) || {};
       this.settings = Object.assign({
-        caOn: true, speed: 7, grid: 'flower', species: 'cycle', sound: true, volume: 0.6,
+        caOn: true, speed: 7, grid: 'escher-five', species: 'cycle', sound: true, volume: 0.6,
         cameraMode: 'free', ambient: true, debug: false, seed: (Math.random() * 1e9) | 0, space: 'cylinder',
         caRule: 'wave', visualTheme: 'indigo', audioTheme: 'crystal', audioScale: '', audioPattern: 'ambient',
       }, saved);
@@ -74,17 +74,17 @@
       // 変態の瞬間: きらめく音・波紋、視線を少し寄せる
       this.creatures.bus.on('morph', (e) => {
         const pl = this.space.toPlane(e.pos);
-        this.ripples.spawn(pl.x, pl.y, e.to === 'bird' ? 0xffb070 : 0x9dff8a, 3, 1.2);
+        this.ripples.spawn(pl.x, pl.y, new THREE.Color(TL.Species.get(e.to).color).getHex(), 3, 1.2);
         this.bursts.emit(e.pos, this.space.toAxis(e.pos), TL.Species.get(e.to).color, 45, 2);
         this.audio.morph(e.from, e.to, { u: pl.x / this.topology.Lx, pos: e.pos });
         this.cameraCtl.attract(e.pos, 0.1);
       });
-      // 鳥がトカゲになって壁に降りた所
+      // 空から壁へ降りた所(魚 → カエル、鳥 → 獣)
       this.creatures.bus.on('touch', (e) => {
         const cell = this.topology.locate(e.x, e.y);
         if (cell) this.tiles.flash(cell.id, 1.2, '#9dff8a');
       });
-      // トカゲが這った跡のタイルがかすかに光る
+      // 壁を進む生物(カエル・トカゲ・獣)の通った跡のタイルがかすかに光る
       this.creatures.bus.on('crawl', (e) => {
         const cell = this.topology.locate(e.x, e.y);
         if (cell && this.ca.cells[cell.id].state === TL.ST.IDLE) this.tiles.flash(cell.id, 0.7, e.creature.species.color);
@@ -225,21 +225,21 @@
     }
 
     // Species の設定から、最初に生まれる種と、連鎖で次に生まれる種を決める
-    //   fish / bird / lizard: その種だけ    cycle: 魚 → 鳥 → トカゲ → 魚 … の順に
-    //   eco: 生態系。3 種がいっしょに暮らし、次の種はランダム
+    //   各種: その種だけ    cycle: 魚類 → 両生類 → 爬虫類 → 鳥類 → 哺乳類 → 魚類 … の順に
+    //   eco: 生態系。5 種がいっしょに暮らし、次の種はランダム
     firstSpecies() {
-      const m = this.settings.species;
-      if (m === 'eco') return ['fish', 'bird', 'lizard'][Math.floor(this.rngFn() * 3)];
-      return m === 'cycle' || m === 'meta' ? 'fish' : m;
+      const m = this.settings.species, order = TL.Species.order;
+      if (m === 'eco') return order[Math.floor(this.rngFn() * order.length)];
+      return m === 'cycle' || m === 'meta' ? order[0] : m;
     }
     nextSpecies(prev) {
-      if (this.settings.species === 'meta') return 'fish';
+      const order = TL.Species.order;
+      if (this.settings.species === 'meta') return order[0];
       if (this.settings.species === 'eco') {
-        const others = ['fish', 'bird', 'lizard'].filter((s) => s !== prev);
+        const others = order.filter((s) => s !== prev);
         return others[Math.floor(this.rngFn() * others.length)];
       }
       if (this.settings.species !== 'cycle') return this.settings.species;
-      const order = ['fish', 'bird', 'lizard'];
       return order[(order.indexOf(prev) + 1) % order.length];
     }
 
@@ -255,7 +255,7 @@
       for (let k = 0; k < 14; k++) {
         const dir = rng() < 0.7 ? ahead : -ahead;
         let y = from.y + dir * (near + rng() * (far - near));
-        if (this.space.pickY) y = this.space.pickY(from.y, near + rng() * (far - near), rng, TL.Species.get(speciesId).motion === 'crawl');
+        if (this.space.pickY) y = this.space.pickY(from.y, near + rng() * (far - near), rng, ['crawl', 'hop', 'run'].includes(TL.Species.get(speciesId).motion));
         else y = this.space.periodicY ? ((y % this.space.L) + this.space.L) % this.space.L : clamp(y, 4, this.space.L - 4);
         const cell = this.topology.locate(rng() * this.topology.Lx, y);
         if (!cell || cell.id === fromId) continue;
@@ -268,20 +268,27 @@
     // Escher のタイルからは、そのタイルの生物が(タイルの輪郭のまま)生まれる
     spawnFrom(id, chain, species) {
       const tcell = this.topology.cells[id];
-      // 変態: 魚として出て、鳥になって飛び、壁でトカゲになって這ってから、タイルへ戻る
-      if (this.settings.species === 'meta' && !tcell.species) {
-        const mid = this.pickTarget(id, 'bird');
-        const to = mid && this.pickTarget(mid.id, 'lizard');
-        if (!to) return null;
-        const p0 = this.cellPos(id);
-        return this.creatures.spawnMeta({ id, x: p0.x, y: p0.y }, { id: mid.id, x: mid.position.x, y: mid.position.y }, { id: to.id, x: to.position.x, y: to.position.y }, { chain });
-      }
+      if (this.settings.species === 'meta' && !tcell.species) return this.spawnJourney(id, chain);
       const tile = tcell.species ? TL.Escher.creatureOutline(tcell) : null;
       if (tcell.species) species = tcell.species; // Escher のタイルからはそのタイルの生物が生まれる
       const to = this.pickTarget(id, species);
       if (!to) return null;
       const p0 = this.cellPos(id), p1 = to.position;
       return this.creatures.spawn({ id, x: p0.x, y: p0.y }, { id: to.id, x: p1.x, y: p1.y }, { species, chain, tile });
+    }
+
+    // 変態: 魚類として泳ぎ出し、両生類(跳ねる)→ 爬虫類(這う)→ 鳥類(飛ぶ)→ 哺乳類(駆ける)と姿を変えてタイルへ戻る
+    spawnJourney(id, chain) {
+      const order = TL.Species.order;
+      let cur = this.topology.cells[id];
+      const pts = [{ id, x: cur.position.x, y: cur.position.y }];
+      for (const sp of order) {
+        const nx = this.pickTarget(cur.id, sp);
+        if (!nx) return null;
+        pts.push({ id: nx.id, x: nx.position.x, y: nx.position.y });
+        cur = nx;
+      }
+      return this.creatures.spawnJourney(pts, order, { chain });
     }
 
     // ---------- イベント ----------
@@ -309,7 +316,19 @@
       this.burstAt(id, this.theme.colors.activating, 50, 3.5);
       this.audio.seed(this.where(cell), cell.species);
       // 演奏で連打しても生物があふれないよう、生まれるのは時々だけ
-      if (source !== 'hold' || (this.rngFn() < 0.18 && this.creatures.count < 8)) this.spawnFrom(id, 0, species);
+      if (source !== 'hold' || (this.rngFn() < 0.3 && this.creatures.count < 20)) {
+        this.spawnFrom(id, 0, species);
+        // 群れ: 近くのタイルからも続いて生まれる(順番モードでは次の綱)
+        if (source !== 'hold') {
+          const near = this.topology.rings(id, 2).slice(1).flat();
+          let next = species;
+          for (let k = 0; k < 2 && near.length; k++) {
+            const n = near[Math.floor(this.rngFn() * near.length)];
+            next = this.nextSpecies(next);
+            this.spawnFrom(n, 0, this.topology.cells[n].species || next);
+          }
+        }
+      }
       if (source === 'pointer' || source === 'midi' || source === 'hold') this.ui.hideHint();
       else this.cameraCtl.attract(this.worldOf(id), 0.12); // 自動で生まれた時だけ視線を少し寄せる
     }
@@ -343,7 +362,7 @@
       // 連鎖: 深くなるほど続きにくい。広がった波の中から次の生物が生まれる。
       if (this.rngFn() < 0.92 * Math.pow(0.8, chain)) {
         const eco = this.settings.species === 'eco';
-        const count = eco && this.rngFn() < 0.45 ? 2 : 1;
+        const count = eco ? 2 + (this.rngFn() < 0.5 ? 1 : 0) : 2;
         this.pendingSpawn.set(id, { chain: chain + 1, species: this.nextSpecies(creature.species.id), count, last: creature.species.id });
       }
     }
@@ -358,11 +377,7 @@
         p.count = (p.count || 1) - 1;
         if (p.count <= 0) this.pendingSpawn.delete(c.origin);
         // 生態系ではときどき、変態しながら生きる個体が生まれる
-        if (this.settings.species === 'eco' && this.rngFn() < 0.15 && !this.topology.cells[c.id].species) {
-          const mid = this.pickTarget(c.id, 'bird'), to = mid && this.pickTarget(mid.id, 'lizard');
-          const p0 = this.cellPos(c.id);
-          if (to) { this.creatures.spawnMeta({ id: c.id, x: p0.x, y: p0.y }, { id: mid.id, x: mid.position.x, y: mid.position.y }, { id: to.id, x: to.position.x, y: to.position.y }, { chain: p.chain }); continue; }
-        }
+        if (this.settings.species === 'eco' && this.rngFn() < 0.15 && !this.topology.cells[c.id].species && this.spawnJourney(c.id, p.chain)) continue;
         this.spawnFrom(c.id, p.chain, p.species);
         if (p.count > 0) p.species = this.nextSpecies(p.species); // 2 匹目は別の種
       }
@@ -373,7 +388,7 @@
       this.meetT = (this.meetT || 0) - dt;
       if (this.meetT > 0) return;
       this.meetT = 0.25;
-      const list = this.creatures.active.filter((c) => c.phase === 'travel' || c.phase === 'meta-travel' || c.phase === 'meta-crawl');
+      const list = this.creatures.active.filter((c) => c.phase === 'travel');
       for (let i = 0; i < list.length; i++) {
         for (let j = i + 1; j < list.length; j++) {
           const a = list[i], b = list[j];
@@ -404,9 +419,9 @@
       if (!this.settings.ambient) return;
       this.nextAmbient -= dt;
       if (this.nextAmbient > 0) return;
-      this.nextAmbient = 7 + this.rngFn() * 7;
-      if (this.exhibit) this.nextAmbient = 4 + this.rngFn() * 5; // 展示中は途切れないよう少し頻繁に
-      const crowd = this.settings.species === 'eco' ? 5 : 2;
+      this.nextAmbient = 4 + this.rngFn() * 5;
+      if (this.exhibit) this.nextAmbient = 2.5 + this.rngFn() * 3; // 展示中は途切れないよう少し頻繁に
+      const crowd = this.settings.species === 'eco' ? 16 : 10;
       if ((!this.exhibit && this.cameraCtl.idleFor < 5) || this.creatures.count > crowd || this.ca.activeCount > 60) return;
       const h = this.picker.pickNdc((this.rngFn() - 0.5) * 1.3, (this.rngFn() - 0.5) * 1.1);
       if (h) this.activate(h.cell.id, 'ambient');

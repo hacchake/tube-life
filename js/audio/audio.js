@@ -393,7 +393,8 @@
     _play(role, species, midi, vel, where, when = 0) {
       if (!this.enabled || !this.ensure()) return;
       const f = mtof(midi);
-      const sp = species === 'bird' ? { idx: 1.6, up: 12, short: 0.7 } : species === 'lizard' ? { idx: 0.7, up: 0, short: 0.45 } : { idx: 1, up: 0, short: 1 };
+      // 種ごとの音色の違い(明るさ idx、音域 up、長さ short)
+      const sp = { bird: { idx: 1.6, up: 12, short: 0.7 }, lizard: { idx: 0.7, up: 0, short: 0.45 }, frog: { idx: 0.85, up: -5, short: 0.35 }, mammal: { idx: 1.2, up: -12, short: 1.3 } }[species] || { idx: 1, up: 0, short: 1 };
       const fu = f * Math.pow(2, sp.up / 12);
       switch (this.theme) {
         case 'gamelan':
@@ -403,7 +404,7 @@
         case 'choir': {
           if (role === 'step') return this._noise(vel * 0.5, where, when, { dur: 0.08, freq: 2400, type: 'bandpass', q: 3 });
           // 生物ごとに母音を変える(魚 = お、鳥 = い、トカゲ = あ)。和音は「あ」で厚く
-          const vowel = role === 'mature' || role === 'meet' ? 'a' : species === 'bird' ? 'i' : species === 'lizard' ? 'a' : 'o';
+          const vowel = role === 'mature' || role === 'meet' ? 'a' : ({ bird: 'i', lizard: 'a', frog: 'e', mammal: 'u' })[species] || 'o';
           const vf = species === 'bird' ? fu / 2 : fu; // 鳥も歌える高さに
           return this._voiceChoir(vf, vel * 0.55, where, when, { dur: role === 'mature' ? 4.5 : role === 'death' ? 3.5 : 2.8 * Math.max(0.7, sp.short), attack: role === 'seed' ? 0.08 : 0.3, vowel });
         }
@@ -576,6 +577,8 @@
       const q = this._quantize();
       if (species === 'bird') this._noise(0.12, w, q, { dur: 0.9, freq: 1400, type: 'bandpass', am: 14 }); // 羽音
       else if (species === 'lizard') for (let k = 0; k < 4; k++) this._noise(0.08, w, q + 0.5 + k * 0.08, { dur: 0.04, freq: 3000, type: 'bandpass', q: 3 });
+      else if (species === 'frog') for (let k = 0; k < 2; k++) this._noise(0.14, w, q + k * 0.22, { dur: 0.16, freq: 520, type: 'bandpass', q: 6, am: 38 }); // ケロケロ
+      else if (species === 'mammal') this._sine(mtof(this.noteAt(w.u, 0) - 12), 0.12, w, q, { dur: 2.2, attack: 0.5, glide: 1.5 }); // 遠吠え
       else this._sine(mtof(this.noteAt(w.u, 0)), 0.1, w, q, { dur: 1.8, attack: 0.4, glide: 3 }); // 泡が昇る
       this._play('emerge', species, this.noteAt(w.u, 1) + 12, 0.16, w, q + (species === 'fish' ? 0.6 : 0.9));
     }
@@ -585,6 +588,8 @@
       const q = this._quantize();
       if (species === 'fish') this._sine(mtof(this.noteAt(w.u, 1)) * 1.6, 0.12, w, q, { dur: 0.5, glide: 0.5 }); // ぽちゃん
       if (species === 'bird') this._play('land', 'bird', this.noteAt(w.u, 2), 0.14, w, q + 0.16);
+      if (species === 'frog') this._noise(0.12, w, q, { dur: 0.2, freq: 480, type: 'bandpass', q: 6, am: 32 });
+      if (species === 'mammal') this._sine(mtof(this.noteAt(w.u, 0) - 12), 0.12, w, q, { dur: 0.6, glide: 0.6 }); // どすん
       this._play('land', species, this.noteAt(w.u, 1), 0.18, w, q);
     }
 

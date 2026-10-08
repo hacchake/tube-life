@@ -68,7 +68,7 @@
 
       const sp = $('#speciesSelect');
       sp.innerHTML = TL.Species.all.filter((s) => s.ready).map((s) => `<option value="${s.id}">${s.name}</option>`).join('') +
-        '<option value="cycle">Fish → Bird → Lizard(順番)</option>' +
+        '<option value="cycle">魚類 → 両生類 → 爬虫類 → 鳥類 → 哺乳類(順番)</option>' +
         '<option value="meta">Metamorphosis(変態)</option>' +
         '<option value="eco">Ecosystem(複数生物)</option>' +
         TL.Species.all.filter((s) => !s.ready).map((s) => `<option value="${s.id}" disabled>${s.name}(準備中)</option>`).join('');

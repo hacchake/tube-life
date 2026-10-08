@@ -184,7 +184,7 @@
         let t = this.map.get(c);
         if (!t) { t = this.pool.pop() || this._make(); t.pts = []; t.fade = 1; t.line.visible = true; this.map.set(c, t); }
         t.color.copy(c.mat.emissive).lerp(c.mat.color, 0.4);
-        const moving = c.phase === 'travel' || (c.phase && c.phase.startsWith('meta-'));
+        const moving = c.phase === 'travel';
         if (moving) t.pts.unshift(c.mesh.position.clone());
         else if (t.pts.length) t.pts.pop();
         if (t.pts.length > this.len) t.pts.length = this.len;

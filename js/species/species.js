@@ -10,13 +10,16 @@
   const Species = {
     register(def) { list.push(def); byId[def.id] = def; },
     get(id) { return byId[id] || byId.fish; },
-    get all() { return list; },
+    get all() { return list.slice().sort((a, b) => a.order - b.order); },
+    // 進化の順。変態・順番モードはこの順に巡る
+    get order() { return this.all.filter((s) => s.ready).map((s) => s.id); },
   };
 
   // 魚: 頭が +X。尾びれは二股。
   Species.register({
     id: 'fish',
-    name: 'Fish',
+    name: 'Fish(魚類)',
+    order: 0,
     ready: true,
     motion: 'swim',          // 泳ぐ(チューブの中を通って別のタイルへ)
     color: '#39c4ff',
@@ -48,7 +51,8 @@
   // 鳥: 翼を広げて上から見た形。頭が +X、翼が ±Y、背中が +Z。
   Species.register({
     id: 'bird',
-    name: 'Bird',
+    name: 'Bird(鳥類)',
+    order: 3,
     ready: true,
     motion: 'fly',           // 羽ばたいてチューブの奥へ飛ぶ
     color: '#ff7a1f',
@@ -82,7 +86,8 @@
   // トカゲ: 上から見た形。頭が +X、四本の脚、長い尾。壁から離れずに這う。
   Species.register({
     id: 'lizard',
-    name: 'Lizard',
+    name: 'Lizard(爬虫類)',
+    order: 2,
     ready: true,
     motion: 'crawl',         // 壁面を這って別のタイルへ
     color: '#6dff5a',
@@ -110,6 +115,80 @@
       return s;
     },
     eyes: [[0.4, 0.04, 1], [0.4, -0.04, 1]],
+  });
+
+  const mirror = (half) => {
+    const pts = half.concat(half.slice(1, -1).reverse().map(([x, y]) => [x, -y]));
+    const s = new THREE.Shape();
+    pts.forEach(([x, y], i) => (i ? s.lineTo(x, y) : s.moveTo(x, y)));
+    s.closePath();
+    return s;
+  };
+
+  // カエル(両生類): 上から見た形。幅の広い頭、短い前脚、大きく曲げた後脚。壁の上を跳ねて進む。
+  Species.register({
+    id: 'frog',
+    name: 'Frog(両生類)',
+    order: 1,
+    ready: true,
+    motion: 'hop',           // 跳ねる
+    color: '#e4ff3a',
+    emissive: '#6a8a00',
+    voice: 'frog',
+    length: 1.6,
+    thickness: 0.12,
+    pose: 'top',
+    deform: 'hop',           // 跳ぶ時に後脚を蹴り出す
+    emergeTime: 1.6,
+    speed: 3.4,
+    range: [6, 16],
+    outline() {
+      return mirror([
+        [0.5, 0], [0.47, 0.09], [0.4, 0.15], [0.34, 0.2], [0.28, 0.19], [0.22, 0.17],     // 鼻先〜目の膨らみ
+        [0.21, 0.22], [0.3, 0.3], [0.37, 0.31], [0.34, 0.36], [0.25, 0.34], [0.12, 0.23], // 前脚
+        [0.0, 0.22], [-0.14, 0.2],                                                         // 胴
+        [-0.17, 0.27], [-0.06, 0.37], [0.0, 0.43], [-0.05, 0.46],                          // 後脚(膝)
+        [-0.15, 0.41], [-0.28, 0.35], [-0.38, 0.4], [-0.47, 0.46], [-0.5, 0.39], [-0.39, 0.29], [-0.26, 0.19], // 後脚(足先)
+        [-0.3, 0.08], [-0.33, 0.0],
+      ]);
+    },
+    eyes: [[0.36, 0.16, 1], [0.36, -0.16, 1]],
+  });
+
+  // 獣(哺乳類): 横から見た形(キツネのような)。頭が +X、背が +Y、脚が -Y。
+  // 内壁に脚を着けて駆ける(背はチューブの中心側)。
+  Species.register({
+    id: 'mammal',
+    name: 'Mammal(哺乳類)',
+    order: 4,
+    ready: true,
+    motion: 'run',           // 壁の上を駆ける
+    color: '#ff7ad9',
+    emissive: '#a0156e',
+    voice: 'mammal',
+    length: 2.1,
+    thickness: 0.16,
+    pose: 'side',
+    deform: 'run',           // 前脚と後脚を交互に振る
+    emergeTime: 1.9,
+    speed: 5.2,
+    range: [10, 28],
+    outline(THREE) {
+      const pts = [
+        [0.5, 0.12], [0.42, 0.17], [0.36, 0.22], [0.33, 0.34], [0.29, 0.24], [0.24, 0.22], // 鼻〜耳〜頭
+        [0.2, 0.16], [0.05, 0.15], [-0.15, 0.14], [-0.28, 0.13],                           // 首〜背
+        [-0.36, 0.16], [-0.48, 0.22], [-0.5, 0.17], [-0.42, 0.1], [-0.32, 0.06],            // 尾
+        [-0.3, -0.02], [-0.32, -0.2], [-0.36, -0.34], [-0.31, -0.35], [-0.25, -0.2], [-0.2, -0.08], // 後脚
+        [0.0, -0.08], [0.12, -0.07],                                                       // 腹
+        [0.16, -0.2], [0.18, -0.34], [0.23, -0.34], [0.22, -0.18], [0.25, -0.04],          // 前脚
+        [0.32, 0.04], [0.44, 0.08],                                                        // 胸〜あご
+      ];
+      const s = new THREE.Shape();
+      pts.forEach(([x, y], i) => (i ? s.lineTo(x, y) : s.moveTo(x, y)));
+      s.closePath();
+      return s;
+    },
+    eyes: [[0.38, 0.17, 1], [0.38, 0.17, -1]],
   });
 
   TL.Species = Species;
