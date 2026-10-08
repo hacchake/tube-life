@@ -30,6 +30,15 @@
     abyss: { name: '深海(ソナー)', root: 38, scale: 'hirajoshi' },
   };
 
+  // 声の母音を作る 3 つの帯域(周波数, 強さ, Q)。人の声らしさはここで決まる
+  const VOWELS = {
+    a: [[800, 1, 9], [1150, 0.6, 10], [2900, 0.25, 12]],
+    o: [[450, 1, 8], [800, 0.45, 10], [2830, 0.12, 12]],
+    u: [[325, 1, 8], [700, 0.3, 10], [2530, 0.1, 12]],
+    e: [[400, 1, 9], [1700, 0.5, 11], [2600, 0.3, 12]],
+    i: [[300, 1, 9], [2250, 0.45, 12], [3000, 0.3, 12]],
+  };
+
   const PATTERNS = {
     ambient: { name: 'アンビエント' },
     melodic: { name: '旋律(波が歌う)' },
@@ -243,6 +252,55 @@
       this._done(nodes, out, t, t + dur);
     }
 
+    // 声(聖歌): 少しずつずらした声を重ね、ビブラートと歌い出しのしゃくりを付け、
+    // 母音の 3 つの帯域を並べて通す。帯域で削れる分だけ音量を補う。
+    _voiceChoir(f, vel, where, when, { dur = 2.6, attack = 0.25, vowel = 'a' } = {}) {
+      if (!this._ok()) return;
+      const ctx = this.ctx, t = ctx.currentTime + 0.01 + when;
+      const out = this._out(where);
+      // 鳴り始め → 伸ばす → ゆっくり消える(声らしい形)
+      out.gain.setValueAtTime(0.0001, t);
+      out.gain.linearRampToValueAtTime(vel, t + attack);
+      out.gain.setValueAtTime(vel, t + Math.max(attack, dur * 0.45));
+      out.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      const mix = ctx.createGain();
+      mix.gain.value = 5.5; // 帯域で削れる分の補い
+      for (const [fq, amp, q] of VOWELS[vowel]) {
+        const bp = ctx.createBiquadFilter();
+        bp.type = 'bandpass'; bp.frequency.value = fq; bp.Q.value = q;
+        const g = ctx.createGain(); g.gain.value = amp;
+        mix.connect(bp); bp.connect(g); g.connect(out);
+      }
+      // 低い声の芯(フィルターを通さない柔らかい成分)
+      const body = ctx.createGain(); body.gain.value = 0.1;
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = f * 2.5;
+      body.connect(lp); lp.connect(out);
+      // ビブラート(少し遅れて深くなる)
+      const vib = ctx.createOscillator(), vg = ctx.createGain();
+      vib.frequency.value = 4.8 + Math.random() * 0.8;
+      vg.gain.setValueAtTime(0, t);
+      vg.gain.linearRampToValueAtTime(f * 0.006, t + Math.min(0.8, dur * 0.4));
+      vib.connect(vg);
+      const nodes = [vib];
+      for (const det of [-11, -3, 7, 13]) {
+        const o = ctx.createOscillator();
+        o.type = 'sawtooth';
+        o.detune.value = det + (Math.random() - 0.5) * 4;
+        o.frequency.setValueAtTime(f * 0.985, t);          // 歌い出しのしゃくり
+        o.frequency.exponentialRampToValueAtTime(f, t + 0.12);
+        vg.connect(o.frequency);
+        o.connect(mix); o.connect(body);
+        nodes.push(o);
+      }
+      // 息の音
+      const br = ctx.createBufferSource(); br.buffer = this.noise;
+      const bf = ctx.createBiquadFilter(); bf.type = 'bandpass'; bf.frequency.value = VOWELS[vowel][1][0] * 1.6; bf.Q.value = 1.5;
+      const bg = ctx.createGain(); bg.gain.value = 0.05;
+      br.connect(bf); bf.connect(bg); bg.connect(out);
+      nodes.push(br);
+      this._done(nodes, out, t, t + dur);
+    }
+
     // サイン波の音(ソナー・低音)。glide で音程が滑る
     _sine(f, vel, where, when, { dur = 1.5, attack = 0.01, glide = 1, type = 'sine' } = {}) {
       if (!this._ok()) return;
@@ -298,9 +356,13 @@
           if (role === 'step') return this._fm(f * 2, vel * 0.5, where, when, { ratio: 5.4, index: 0.8, dur: 0.25 });
           if (role === 'death' || role === 'decay') return this._fm(f / 2, vel, where, when, { ratio: 1.41, index: 2.5, dur: 5, decayIndex: 0.4, partial2: 2.76 }); // ゴング
           return this._fm(fu, vel, where, when, { ratio: 3.5 + (species === 'lizard' ? 1.7 : 0), index: 1.2 * sp.idx, dur: 3.2 * sp.short, partial2: 2.76 });
-        case 'choir':
-          if (role === 'step') return this._noise(vel * 0.3, where, when, { dur: 0.06, freq: 2500, type: 'bandpass', q: 3 });
-          return this._saw(fu, vel * 0.7, where, when, { dur: role === 'mature' ? 4 : 2.6 * sp.short, attack: role === 'seed' ? 0.05 : 0.25, formant: [700, 1100, 2400][species === 'bird' ? 2 : species === 'lizard' ? 1 : 0], q: 4 });
+        case 'choir': {
+          if (role === 'step') return this._noise(vel * 0.5, where, when, { dur: 0.08, freq: 2400, type: 'bandpass', q: 3 });
+          // 生物ごとに母音を変える(魚 = お、鳥 = い、トカゲ = あ)。和音は「あ」で厚く
+          const vowel = role === 'mature' || role === 'meet' ? 'a' : species === 'bird' ? 'i' : species === 'lizard' ? 'a' : 'o';
+          const vf = species === 'bird' ? fu / 2 : fu; // 鳥も歌える高さに
+          return this._voiceChoir(vf, vel * 0.28, where, when, { dur: role === 'mature' ? 4.5 : role === 'death' ? 3.5 : 2.8 * Math.max(0.7, sp.short), attack: role === 'seed' ? 0.08 : 0.3, vowel });
+        }
         case 'pulse':
           if (role === 'step') return this._noise(vel * 0.5, where, when, { dur: 0.04, freq: 9000 });
           if (role === 'decay' || role === 'death') return this._sine(f / 2, vel * 1.4, where, when, { dur: 0.6, glide: 0.5, type: 'triangle' });
@@ -324,11 +386,23 @@
       const oscs = [];
       const tones = this._bedTones();
       const type = { crystal: 'triangle', gamelan: 'sine', choir: 'sawtooth', pulse: 'sawtooth', abyss: 'sine' }[this.theme];
+      // 聖歌: 背景の響きも「あ」の母音の帯域を通して、遠くで歌う合唱にする
+      let dest = flt;
+      if (this.theme === 'choir') {
+        const mix = ctx.createGain(); mix.gain.value = 12;
+        for (const [fq, amp, q] of VOWELS.a) {
+          const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = fq; bp.Q.value = q * 0.7;
+          const ag2 = ctx.createGain(); ag2.gain.value = amp;
+          mix.connect(bp); bp.connect(ag2); ag2.connect(flt);
+        }
+        dest = mix;
+        flt.frequency.value = 3000;
+      }
       tones.forEach((m, i) => {
         for (const det of [-6, 6]) {
           const o = ctx.createOscillator(); o.type = type; o.frequency.value = mtof(m); o.detune.value = det;
           const og = ctx.createGain(); og.gain.value = (i === 0 ? 0.11 : 0.06) * (type === 'sawtooth' ? 0.5 : 1);
-          o.connect(og); og.connect(flt); o.start(); oscs.push(o);
+          o.connect(og); og.connect(dest); o.start(); oscs.push(o);
         }
       });
       // 空気のざわめき(ノイズ)
@@ -363,7 +437,7 @@
       // 生命がいない時は完全に消える(ドローンの鳴り方の時だけ、静かに残す)
       const level = this.pattern === 'drone' ? 0.9 * (0.15 + 0.85 * a) : (0.55 * Math.max(0, a - 0.02)) / 0.98;
       b.g.gain.setTargetAtTime(this.enabled ? level : 0, t, 0.9);
-      b.flt.frequency.setTargetAtTime(300 + 2600 * a * a, t, 1.0);
+      b.flt.frequency.setTargetAtTime((this.theme === 'choir' ? 1400 : 300) + 2600 * a * a, t, 1.0);
       this.tone.frequency.setTargetAtTime(2500 + 9000 * a, t, 1.5);
     }
 
