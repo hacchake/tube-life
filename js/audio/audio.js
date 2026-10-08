@@ -25,7 +25,7 @@
   const THEMES = {
     crystal: { name: '結晶(透明)', root: 50, scale: 'pentatonic' },
     gamelan: { name: 'ガムラン(青銅)', root: 49, scale: 'pelog' },
-    choir: { name: '聖歌(声)', root: 45, scale: 'dorian' },
+    choir: { name: '聖歌(声)', root: 57, scale: 'dorian' },
     pulse: { name: '電子(パルス)', root: 45, scale: 'minorPenta' },
     abyss: { name: '深海(ソナー)', root: 38, scale: 'hirajoshi' },
   };
@@ -118,7 +118,7 @@
       let brown = 0;
       for (let i = 0; i < len; i++) { const w = Math.random() * 2 - 1; brown = (brown + 0.02 * w) / 1.02; nd[i] = i % 2 ? w : brown * 3.5; }
 
-      this._startBed();
+      if (this.pattern === 'drone') this._startBed();
     }
 
     _impulse(sec, decay) {
@@ -140,7 +140,15 @@
 
     setTheme(id) {
       this.theme = THEMES[id] ? id : 'crystal';
-      if (this.ctx) { this._stopBed(); this._startBed(); }
+      if (this.ctx) { this._stopBed(); if (this.pattern === 'drone') this._startBed(); }
+    }
+
+    // 鳴り方。背景の響き(持続音)は「ドローン」の時だけ鳴らす(ほかでは出来事の音だけ)
+    setPattern(p) {
+      this.pattern = PATTERNS[p] ? p : 'ambient';
+      if (!this.ctx) return;
+      if (this.pattern === 'drone' && !this.bed) this._startBed();
+      else if (this.pattern !== 'drone' && this.bed) this._stopBed();
     }
 
     setEnabled(on) {
@@ -361,7 +369,7 @@
           // 生物ごとに母音を変える(魚 = お、鳥 = い、トカゲ = あ)。和音は「あ」で厚く
           const vowel = role === 'mature' || role === 'meet' ? 'a' : species === 'bird' ? 'i' : species === 'lizard' ? 'a' : 'o';
           const vf = species === 'bird' ? fu / 2 : fu; // 鳥も歌える高さに
-          return this._voiceChoir(vf, vel * 0.28, where, when, { dur: role === 'mature' ? 4.5 : role === 'death' ? 3.5 : 2.8 * Math.max(0.7, sp.short), attack: role === 'seed' ? 0.08 : 0.3, vowel });
+          return this._voiceChoir(vf, vel * 0.55, where, when, { dur: role === 'mature' ? 4.5 : role === 'death' ? 3.5 : 2.8 * Math.max(0.7, sp.short), attack: role === 'seed' ? 0.08 : 0.3, vowel });
         }
         case 'pulse':
           if (role === 'step') return this._noise(vel * 0.5, where, when, { dur: 0.04, freq: 9000 });

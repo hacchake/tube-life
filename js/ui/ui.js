@@ -46,7 +46,7 @@
       bindSelect('#themeSelect', opts(TL.VISUAL_THEMES, st.visualTheme), (v) => app.applyTheme(v));
       bindSelect('#audioThemeSelect', opts(TL.AUDIO_THEMES, st.audioTheme), (v) => { st.audioTheme = v; app.audio.setTheme(v); });
       bindSelect('#scaleSelect', '<option value="">テーマに合わせる</option>' + opts(TL.AUDIO_SCALES, st.audioScale), (v) => { st.audioScale = v; app.audio.scale = v || null; app.audio._retuneBed && app.audio.ctx && app.audio._retuneBed(); });
-      bindSelect('#patternSelect', opts(TL.AUDIO_PATTERNS, st.audioPattern), (v) => { st.audioPattern = v; app.audio.pattern = v; });
+      bindSelect('#patternSelect', opts(TL.AUDIO_PATTERNS, st.audioPattern), (v) => { st.audioPattern = v; app.audio.setPattern(v); });
       $('#exhibitBtn').addEventListener('click', () => { panel.classList.remove('open'); app.setExhibit(true); });
       $('#fullBtn').addEventListener('click', () => this.fullscreen());
 

@@ -39,7 +39,7 @@ Flower of Life × Escher風テセレーション × Cellular Automaton × 3D Tub
 | Species | Fish / Bird / Lizard / 順番(魚→鳥→トカゲ)/ Metamorphosis(変態)/ Ecosystem(複数生物) |
 | Look | インディゴ / 深海 / 残り火 / オーロラ / 版画(紙とインク) |
 | Speed / Sound / Volume | CA の速さ、音の ON/OFF と音量 |
-| 音色 / 音階 / 鳴り方 | 結晶・ガムラン・聖歌・電子・深海 / 8 つの音階 / アンビエント・旋律・リズム・ドローン |
+| 音色 / 音階 / 鳴り方 | 結晶・ガムラン・聖歌・電子・深海 / 8 つの音階 / アンビエント・旋律・リズム・ドローン(背景の持続音はドローンの時だけ) |
 | Camera | Free(自由)/ Drift(チューブに沿ってゆっくり漂う)/ Cinema(生物を追う) |
 | 自動で生命 | 静かな時に、見えている所で時々生命が生まれる |
 | MIDI(実験的) | Launchpad Mini MK3 などの 8×8 パッドで、見ている画面の 8×8 区画を叩ける(未検証) |
