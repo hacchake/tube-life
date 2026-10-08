@@ -12,7 +12,7 @@
   const RADIUS = 9;       // チューブの半径
   const LENGTH = 150;     // チューブの長さ
   const AROUND = 24;      // 周方向の基準格子点の数
-  const STORE_KEY = 'tube-life/v1';
+  const STORE_KEY = 'tube-life/v2';
 
   class App {
     constructor() {
@@ -20,7 +20,7 @@
       this.settings = Object.assign({
         caOn: true, speed: 7, grid: 'escher-five', species: 'cycle', sound: true, volume: 0.6,
         cameraMode: 'free', ambient: true, debug: false, seed: (Math.random() * 1e9) | 0, space: 'cylinder',
-        caRule: 'wave', visualTheme: 'indigo', audioTheme: 'crystal', audioScale: '', audioPattern: 'ambient',
+        caRule: 'wave', visualTheme: 'tapestry', audioTheme: 'crystal', audioScale: '', audioPattern: 'ambient',
       }, saved);
 
       this.stage = new TL.Stage3D(document.getElementById('world'));

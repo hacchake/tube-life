@@ -16,6 +16,30 @@
   ];
   const SHRINK = { petal: 0.93, face: 0.9, hex: 0.9, tri: 0.88 };
 
+  // 壁の絵(TL.WALL_IMAGES)をそのまま貼る。平面座標で敷き詰め、周方向にはちょうど整数枚で一周させる。
+  // 長さ方向は 2 枚の絵を交互に並べる。タイルの状態の色は絵に掛け合わせる(待機中は白 = 絵のまま)。
+  const WALL_FRAG = `
+    if (uWall > 0.5) {
+      vec2 q = vPlane / uWallSize;
+      vec2 f = vec2(fract(q.x), 1.0 - fract(q.y));
+      vec2 gx = dFdx(q) * vec2(1.0, -1.0), gy = dFdy(q) * vec2(1.0, -1.0); // 継ぎ目でぼやけないよう、勾配は連続な q から
+      vec3 t = mod(floor(q.y), 2.0) < 0.5 ? textureGrad(uWall0, f, gx, gy).rgb : textureGrad(uWall1, f, gx, gy).rgb;
+      diffuseColor.rgb *= t;
+    }
+  `;
+  let wallTex = null;
+  function wallTextures() {
+    if (wallTex || !TL.WALL_IMAGES) return wallTex;
+    const loader = new THREE.TextureLoader();
+    wallTex = TL.WALL_IMAGES.map((src) => {
+      const t = loader.load(src);
+      t.encoding = THREE.sRGBEncoding;
+      t.anisotropy = 8;
+      return t;
+    });
+    return wallTex;
+  }
+
   class TileMesh {
     constructor(scene, space) {
       this.scene = scene;
@@ -28,11 +52,13 @@
 
     // 配色テーマ: 状態の色・塗り分け(tones)・輪郭線
     setTheme(theme) {
+      const rebuild = this.topology && !!theme.wall !== !!(this.theme && this.theme.wall); // 絵を貼る時はタイルの隙間をなくす
       this.theme = theme;
       for (const k in theme.colors) this.colors[k] = new THREE.Color(theme.colors[k]).convertSRGBToLinear(); // 頂点色はリニア空間
       this.tones = theme.tones ? theme.tones.map((h) => new THREE.Color(h).convertSRGBToLinear()) : null;
       this.lineColor = new THREE.Color(theme.line).convertSRGBToLinear();
-      if (this.topology) {
+      if (rebuild) this.build(this.topology);
+      else if (this.topology) {
         this._baseColors();
         this.lines.material.opacity = theme.lineOpacity;
         this.lines.material.blending = theme.ink ? THREE.NormalBlending : THREE.AdditiveBlending;
@@ -44,6 +70,7 @@
     _baseColors() {
       const cells = this.topology.cells, Lx = this.topology.Lx;
       this.baseColor = cells.map((c) => {
+        if (this.theme.wall) return new THREE.Color(1, 1, 1); // 絵のまま
         if (this.tones) {
           const t = c.tone !== undefined ? c.tone : c.kind === 'petal' || c.kind === 'half' ? 0 : c.kind === 'face' || c.kind === 'piece' ? 1 : (c.id % 2);
           const col = this.tones[t % this.tones.length].clone();
@@ -65,7 +92,7 @@
       const cells = topology.cells;
       // 各セルの輪郭を三角形分割する(Escher の生物のような凹んだ形でも正しく塗れる)
       const tris = cells.map((c) => {
-        const k = SHRINK[c.kind] || 0.96;
+        const k = this.theme.wall ? 1 : SHRINK[c.kind] || 0.96;
         const { x: cx, y: cy } = c.position;
         const pts = c.shape.map(([x, y]) => new THREE.Vector2(cx + (x - cx) * k, cy + (y - cy) * k));
         if (THREE.ShapeUtils.isClockWise(pts)) pts.reverse();
@@ -74,6 +101,7 @@
       let nv = 0, nt = 0;
       for (const t of tris) { nv += t.pts.length; nt += t.faces.length; }
       const pos = new Float32Array(nv * 3), base = new Float32Array(nv * 3), nrm = new Float32Array(nv * 3), col = new Float32Array(nv * 3);
+      const plane = new Float32Array(nv * 2); // 絵を貼るための平面座標
       const index = new Uint32Array(nt * 3);
       this.start = new Uint32Array(cells.length);
       this.count = new Uint16Array(cells.length);
@@ -83,6 +111,7 @@
       const v = new THREE.Vector3();
       let vi = 0, ti = 0;
       const put = (x, y) => {
+        plane[vi * 2] = x; plane[vi * 2 + 1] = y;
         space.point(x, y, 0, v);
         base[vi * 3] = pos[vi * 3] = v.x;
         base[vi * 3 + 1] = pos[vi * 3 + 1] = v.y;
@@ -119,11 +148,28 @@
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
       g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      g.setAttribute('aPlane', new THREE.BufferAttribute(plane, 2));
       g.setIndex(new THREE.BufferAttribute(index, 1));
       this.base = base;
       this.nrm = nrm;
       this.geometry = g;
-      this.mesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }));
+      const mat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
+      const tex = this.theme.wall ? wallTextures() : null;
+      if (tex) {
+        // 周方向にちょうど n 枚(絵 1 枚の幅がおよそ 26)。高さは絵の縦横比のまま
+        const n = Math.max(1, Math.round(topology.Lx / 26));
+        const w = topology.Lx / n;
+        const uniforms = { uWall: { value: 1 }, uWall0: { value: tex[0] }, uWall1: { value: tex[1] || tex[0] }, uWallSize: { value: new THREE.Vector2(w, w * 1199 / 1312) } };
+        mat.onBeforeCompile = (sh) => {
+          Object.assign(sh.uniforms, uniforms);
+          sh.vertexShader = 'attribute vec2 aPlane;\nvarying vec2 vPlane;\n' +
+            sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n vPlane = aPlane;');
+          sh.fragmentShader = 'uniform float uWall;\nuniform sampler2D uWall0, uWall1;\nuniform vec2 uWallSize;\nvarying vec2 vPlane;\n' +
+            sh.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>\n' + WALL_FRAG);
+        };
+        mat.customProgramCacheKey = () => 'wall';
+      }
+      this.mesh = new THREE.Mesh(g, mat);
       this.scene.add(this.mesh);
 
       // 輪郭線は頂点色: 波が通るとそのセルの輪郭も光る

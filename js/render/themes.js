@@ -29,6 +29,13 @@
       tones: null, line: '#b06cff', lineOpacity: 0.32, bg: '#03010a', fog: 0.024,
       bloom: [0.7, 0.55, 0.3], tint: '#f4ecff', shadow: '#05000c', motes: '#c2a6ff', grain: 0.045, vignette: 1.1,
     },
+    tapestry: {
+      name: '原画(五綱の壁画)',
+      wall: true, // 壁に原画(TL.WALL_IMAGES)をそのまま貼る
+      colors: { idle: '#ffffff', activating: '#fff6d8', born: '#8ab8ff', growing: '#a8ffb0', mature: '#ffe08a', decay: '#ff9a7a', dead: '#202020' },
+      tones: null, line: '#000000', lineOpacity: 0.6, bg: '#0b0907', fog: 0.02,
+      bloom: [0.35, 0.35, 0.92], tint: '#ffffff', shadow: '#000000', motes: '#ffe2b0', grain: 0.04, vignette: 1.15,
+    },
     escher: {
       name: '版画(紙とインク)',
       colors: { idle: '#e6dfcc', activating: '#ffffff', born: '#5b84b8', growing: '#6c9a68', mature: '#d8ad3f', decay: '#a43f2b', dead: '#0d0b09' },
