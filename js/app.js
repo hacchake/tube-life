@@ -57,6 +57,18 @@
       this.input.bus.on('hover', (e) => { this.hoverId = e.cellId; this.tiles.setHover(e.cellId); });
       this.creatures.bus.on('emerge', (e) => this.onEmerge(e));
       this.creatures.bus.on('landed', (e) => this.onLanded(e));
+      // 変態の瞬間: きらめく音・波紋、視線を少し寄せる
+      this.creatures.bus.on('morph', (e) => {
+        const pl = this.space.toPlane(e.pos);
+        this.ripples.spawn(pl.x, pl.y, e.to === 'bird' ? 0xffb070 : 0x9dff8a, 3, 1.2);
+        this.audio.morph(e.from, e.to, this.panOf({ id: this.topology.locate(pl.x, pl.y).id }));
+        this.cameraCtl.attract(e.pos, 0.1);
+      });
+      // 鳥がトカゲになって壁に降りた所
+      this.creatures.bus.on('touch', (e) => {
+        const cell = this.topology.locate(e.x, e.y);
+        if (cell) this.tiles.flash(cell.id, 1.2, '#9dff8a');
+      });
       // トカゲが這った跡のタイルがかすかに光る
       this.creatures.bus.on('crawl', (e) => {
         const cell = this.topology.locate(e.x, e.y);
@@ -126,8 +138,9 @@
 
     // Species の設定から、最初に生まれる種と、連鎖で次に生まれる種を決める
     //   fish / bird / lizard: その種だけ    cycle: 魚 → 鳥 → トカゲ → 魚 … の順に
-    firstSpecies() { return this.settings.species === 'cycle' ? 'fish' : this.settings.species; }
+    firstSpecies() { return this.settings.species === 'cycle' || this.settings.species === 'meta' ? 'fish' : this.settings.species; }
     nextSpecies(prev) {
+      if (this.settings.species === 'meta') return 'fish';
       if (this.settings.species !== 'cycle') return this.settings.species;
       const order = ['fish', 'bird', 'lizard'];
       return order[(order.indexOf(prev) + 1) % order.length];
@@ -154,6 +167,14 @@
     // Escher のタイルからは、そのタイルの生物が(タイルの輪郭のまま)生まれる
     spawnFrom(id, chain, species) {
       const tcell = this.topology.cells[id];
+      // 変態: 魚として出て、鳥になって飛び、壁でトカゲになって這ってから、タイルへ戻る
+      if (this.settings.species === 'meta' && !tcell.species) {
+        const mid = this.pickTarget(id, 'bird');
+        const to = mid && this.pickTarget(mid.id, 'lizard');
+        if (!to) return null;
+        const p0 = this.cellPos(id);
+        return this.creatures.spawnMeta({ id, x: p0.x, y: p0.y }, { id: mid.id, x: mid.position.x, y: mid.position.y }, { id: to.id, x: to.position.x, y: to.position.y }, { chain });
+      }
       const tile = tcell.species ? TL.Escher.creatureOutline(tcell) : null;
       if (tile) species = tcell.species;
       const to = this.pickTarget(id, species);

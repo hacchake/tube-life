@@ -150,7 +150,10 @@
 
     countBy() {
       const out = {};
-      for (const c of this.active) out[c.species.id] = (out[c.species.id] || 0) + 1;
+      for (const c of this.active) {
+        const id = c.meta ? 'meta:' + (c.shown || c.species).id : c.species.id;
+        out[id] = (out[id] || 0) + 1;
+      }
       return out;
     }
 
@@ -268,6 +271,7 @@
         c.t += dt;
         c.uniforms.uTime.value = this.time + c.phaseOffset;
         const crawl = c.species.motion === 'crawl';
+        if (c.meta && c.phase.startsWith('meta-')) { this._updateMeta(c, dt); continue; } // 変態中(metamorph.js)
         if (c.phase === 'emerge') {
           // 1 光る → 2 浮く → 3 厚みを持つ → 4 起き上がって出発する(トカゲは壁に沿ったまま向きを変える)
           const u = c.t / c.dur;

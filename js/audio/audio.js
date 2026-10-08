@@ -177,6 +177,16 @@
       src.start(t);
     }
 
+    // 変態: 前の種の音から次の種の音へ、きらめきながら駆け上がる
+    morph(from, to, pan) {
+      if (!this.enabled) return;
+      const base = this.note(Math.floor(Math.random() * 5), 1);
+      for (let k = 0; k < 6; k++) {
+        this._tone({ freq: mtof(base + [0, 4, 7, 12, 16, 19][k]), vel: 0.05, attack: 0.02, dur: 1.2, pan, when: k * 0.07, fm: 0.4, fmRatio: 3 });
+      }
+      this._voice(to, base + 12, 0.14, { pan, when: 0.5 });
+    }
+
     // トカゲの足音(小さく乾いたクリック)
     step_(species, pan) {
       if (!this.enabled || !this.ctx || Math.random() < 0.4) return;
