@@ -45,8 +45,9 @@
       this.audio.pattern = TL.AUDIO_PATTERNS[this.settings.audioPattern] ? this.settings.audioPattern : 'ambient';
 
       this.picker = new TL.Picker(this.camera, this.space);
-      this.input = new TL.InputSystem();
-      this.input.add(new TL.VirtualPointerInput(this.stage.dom, this.picker));
+      this.input = new TL.InputSystem(this.picker);
+      const pointer = this.input.add(new TL.VirtualPointerInput(this.stage.dom, this.picker));
+      this.input.add(new TL.KeyboardInput(pointer));
       this.midi = this.input.add(new TL.MidiPadInput(this.picker));
 
       this.cameraCtl = new TL.CameraControls(this.camera, this.stage.dom, this.space);
@@ -66,6 +67,8 @@
 
       this.input.bus.on('activate', (e) => this.activate(e.cellId, e.source));
       this.input.bus.on('hover', (e) => { this.hoverId = e.cellId; this.tiles.setHover(e.cellId); });
+      // 演奏(押しっぱなし)が始まったら、その間は見回しを止める
+      this.input.bus.on('holdstart', () => { this.cameraCtl.dragging = false; if (this.ui) this.ui.hideHint(); });
       this.creatures.bus.on('emerge', (e) => this.onEmerge(e));
       this.creatures.bus.on('landed', (e) => this.onLanded(e));
       // 変態の瞬間: きらめく音・波紋、視線を少し寄せる
@@ -285,6 +288,17 @@
 
     // タイルを活性化 = 生命を植える(クリックでも MIDI でも同じ)
     activate(id, source) {
+      // 演奏(押しっぱなし): 生きているタイルなら、すぐ近くの空いたタイルへ。空きが無ければ音だけ鳴らす
+      if (source === 'hold' && !this._seedable(id)) {
+        const near = this.topology.rings(id, 2).slice(1).flat().filter((n) => this._seedable(n));
+        if (!near.length) {
+          const c = this.ca.cells[id];
+          this.audio.seed(this.where(c), c.species || this.firstSpecies());
+          this.tiles.flash(id, 0.8);
+          return;
+        }
+        id = near[Math.floor(this.rngFn() * near.length)];
+      }
       const species = this.topology.cells[id].species || this.firstSpecies();
       const cell = this.ca.seed(id, { species, chain: 0, source });
       this.selectedId = id;
@@ -294,9 +308,15 @@
       this.ripples.spawn(p.x, p.y, 0xbfe6ff, 5);
       this.burstAt(id, this.theme.colors.activating, 50, 3.5);
       this.audio.seed(this.where(cell), cell.species);
-      this.spawnFrom(id, 0, species);
-      if (source === 'pointer' || source === 'midi') this.ui.hideHint();
+      // 演奏で連打しても生物があふれないよう、生まれるのは時々だけ
+      if (source !== 'hold' || (this.rngFn() < 0.18 && this.creatures.count < 8)) this.spawnFrom(id, 0, species);
+      if (source === 'pointer' || source === 'midi' || source === 'hold') this.ui.hideHint();
       else this.cameraCtl.attract(this.worldOf(id), 0.12); // 自動で生まれた時だけ視線を少し寄せる
+    }
+
+    _seedable(id) {
+      const s = this.ca.cells[id].state;
+      return s === TL.ST.IDLE || s === TL.ST.DEAD;
     }
 
     onEmerge({ creature, cell }) {
@@ -406,6 +426,7 @@
         this.ambient(dt);
         this.encounters(dt);
       }
+      this.input.update(dt); // 押しっぱなしの演奏
       const act = this.activity();
       this.cameraCtl.update(dt);
       this.creatures.update(dt); // 生物は CA 停止中も動く

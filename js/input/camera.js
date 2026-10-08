@@ -29,7 +29,7 @@
       const dom = this.dom;
       let px = 0, py = 0;
       dom.addEventListener('pointerdown', (e) => {
-        if (e.button !== 0 && e.button !== 2) return;
+        if (e.button !== 0) return; // 右ボタンは演奏に使う
         this.dragging = true;
         this.moved = 0;
         px = e.clientX; py = e.clientY;

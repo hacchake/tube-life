@@ -86,15 +86,15 @@
 
       // 大きな空間の残響(チューブの中)
       const conv = ctx.createConvolver();
-      conv.buffer = this._impulse(6.5, 2.4);
-      this.revSend = ctx.createGain(); this.revSend.gain.value = 0.55;
+      conv.buffer = this._impulse(4.2, 2.8);
+      this.revSend = ctx.createGain(); this.revSend.gain.value = 0.45;
       this.dry.connect(this.revSend); this.revSend.connect(conv);
       const revOut = ctx.createGain(); revOut.gain.value = 0.9;
       conv.connect(revOut); revOut.connect(this.tone);
 
       // テンポに合わせたこだま(左右に揺れる)
       this.delay = ctx.createDelay(3); this.delay.delayTime.value = (60 / this.bpm) * 0.75;
-      const fb = ctx.createGain(); fb.gain.value = 0.38;
+      const fb = ctx.createGain(); fb.gain.value = 0.3;
       const dtone = ctx.createBiquadFilter(); dtone.type = 'bandpass'; dtone.frequency.value = 1800; dtone.Q.value = 0.5;
       const dpan = ctx.createStereoPanner(); dpan.pan.value = 0.4;
       this.delaySend = ctx.createGain(); this.delaySend.gain.value = 0.22;
@@ -360,8 +360,9 @@
       const b = this.bed;
       if (!b) return;
       const t = this.ctx.currentTime, a = this.activity;
-      const base = this.pattern === 'drone' ? 0.9 : 0.55;
-      b.g.gain.setTargetAtTime(this.enabled ? base * (0.25 + 0.75 * a) : 0, t, 1.2);
+      // 生命がいない時は完全に消える(ドローンの鳴り方の時だけ、静かに残す)
+      const level = this.pattern === 'drone' ? 0.9 * (0.15 + 0.85 * a) : (0.55 * Math.max(0, a - 0.02)) / 0.98;
+      b.g.gain.setTargetAtTime(this.enabled ? level : 0, t, 0.9);
       b.flt.frequency.setTargetAtTime(300 + 2600 * a * a, t, 1.0);
       this.tone.frequency.setTargetAtTime(2500 + 9000 * a, t, 1.5);
     }
@@ -377,7 +378,10 @@
     // 毎フレーム: 聴き手(カメラ)と、活動量・コード進行
     update(dt, activity, camera) {
       if (!this.ctx) return;
-      this.activity += (clamp(activity, 0, 1) - this.activity) * Math.min(1, dt * 0.8);
+      // 盛り上がりにはすぐ付いていき、静まる時はゆっくり(3 秒ほど)消える
+      const target = clamp(activity, 0, 1);
+      this.activity += (target - this.activity) * Math.min(1, dt * (target > this.activity ? 1.5 : 0.6));
+      if (this.activity < 0.005) this.activity = 0;
       this.chordT += dt;
       if (this.chordT > 12) { this.chordT = 0; this.chordIndex++; this._retuneBed(); }
       this._bedT = (this._bedT || 0) + dt;
