@@ -49,6 +49,11 @@
       grid.value = st.grid;
       grid.addEventListener('change', () => app.setGrid(grid.value));
 
+      const space = $('#spaceSelect');
+      space.innerHTML = TL.SPACES.map((t) => `<option value="${t.id}">${t.name}</option>`).join('');
+      space.value = st.space || 'cylinder';
+      space.addEventListener('change', () => app.setSpace(space.value));
+
       const sp = $('#speciesSelect');
       sp.innerHTML = TL.Species.all.filter((s) => s.ready).map((s) => `<option value="${s.id}">${s.name}</option>`).join('') +
         '<option value="cycle">Fish → Bird → Lizard(順番)</option>' +
@@ -105,7 +110,7 @@
         `generation   ${app.ca.stepCount}`,
         `active cells ${app.ca.activeCount} / ${app.topology.cells.length} (${app.topology.type})`,
         `living       ${species}`,
-        `camera       ${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)}`,
+        `camera       ${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)} (${app.space.kind})`,
         `selected     ${selText}`,
         `seeds→spawn  ${app.pendingSpawn.size}`,
       ].join('\n');

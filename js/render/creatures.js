@@ -62,9 +62,11 @@
       const C = space.C;
       let dx = x1 - x0;
       dx -= C * Math.round(dx / C); // 周方向は近い方へ
+      let dy = y1 - y0;
+      if (space.periodicY) dy -= space.L * Math.round(dy / space.L); // トーラスでは長さ方向も近い方へ
       this.a = [x0, y0];
-      this.d = [dx, y1 - y0];
-      const len = Math.hypot(dx, y1 - y0) || 1;
+      this.d = [dx, dy];
+      const len = Math.hypot(dx, dy) || 1;
       this.n = [-this.d[1] / len, this.d[0] / len];
       this.wiggle = (0.6 + rng() * 0.8) * (rng() < 0.5 ? -1 : 1);
       this.waves = 1 + Math.floor(rng() * 2);
@@ -162,7 +164,9 @@
       const C = this.space.C;
       let dx = b.x - a.x;
       dx -= C * Math.round(dx / C);
-      return { x: a.x + dx * u, y: lerp(a.y, b.y, u) };
+      let dy = b.y - a.y;
+      if (this.space.periodicY) dy -= this.space.L * Math.round(dy / this.space.L);
+      return { x: a.x + dx * u, y: a.y + dy * u };
     }
 
     // 種ごとの通り道
@@ -176,7 +180,9 @@
         return space.point(p.x + (swirl * space.C) / (2 * Math.PI), p.y + (rng() - 0.5) * 2, R - r);
       };
       let mids;
-      if (sp.motion === 'fly') {
+      const routed = space.route && space.route(from, to, rng); // 分岐をまたぐ時は分かれ目を通る
+      if (routed) mids = routed;
+      else if (sp.motion === 'fly') {
         // 鳥: 一気に中心近くまで舞い上がり、らせんを描きながら奥へ飛ぶ
         const turn = (rng() < 0.5 ? -1 : 1) * (0.8 + rng() * 1.2);
         mids = [0.2, 0.4, 0.6, 0.8].map((u) => at(u, R * (0.15 + 0.3 * rng()), turn * Math.sin(Math.PI * u)));

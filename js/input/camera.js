@@ -63,6 +63,15 @@
 
     touch() { this.lastInput = performance.now(); this.attractT = 0; }
 
+    // 位置と向き(dir)を設定する
+    setPose({ pos, dir }) {
+      this.camera.position.copy(pos);
+      this.yaw = Math.atan2(-dir.x, -dir.z);
+      this.pitch = Math.asin(clamp(dir.y, -1, 1));
+      this.vel.set(0, 0, 0);
+      this.camera.rotation.set(this.pitch, this.yaw, 0);
+    }
+
     forward(out = new THREE.Vector3()) {
       return out.set(-Math.sin(this.yaw) * Math.cos(this.pitch), Math.sin(this.pitch), -Math.cos(this.yaw) * Math.cos(this.pitch));
     }
@@ -96,16 +105,21 @@
       if (k.has('KeyQ')) acc.y -= 1;
       if (acc.lengthSq()) this.vel.addScaledVector(acc.normalize(), sp * dt * 4);
 
-      // 漂うモード: 操作が無い間、ゆっくり奥へ進み、少しだけ見回す
+      // 漂うモード: 操作が無い間、チューブの中心線に沿ってゆっくり進み、少しだけ見回す
       if (this.mode === 'drift' && this.idleFor > 3) {
-        const p = this.camera.position;
-        if (p.z > this.space.L - 12) this.driftDir = -1;
-        if (p.z < 12) this.driftDir = 1;
-        this.vel.z += (this.driftDir * 1.6 - this.vel.z) * dt * 0.6;
+        const y = this.space.toPlane(this.camera.position).y;
+        if (!this.space.periodicY) {
+          const b = this.space.driftBounds ? this.space.driftBounds(y) : { lo: 12, hi: this.space.L - 12 };
+          if (y > b.hi) this.driftDir = -1;
+          if (y < b.lo) this.driftDir = 1;
+        }
+        const tan = this.space.tangentAt(y).multiplyScalar(this.driftDir);
+        this.vel.lerp(tan.clone().multiplyScalar(2.4), Math.min(1, dt * 4)); // 減衰と釣り合って秒速 1.3 ほど
         const t = performance.now() / 1000;
-        const targetYaw = (this.driftDir > 0 ? Math.PI : 0) + Math.sin(t * 0.13) * 0.35;
-        this.yaw += (targetYaw - this.yaw) * dt * 0.25;
-        this.pitch += (Math.sin(t * 0.09) * 0.15 - this.pitch) * dt * 0.25;
+        let dy = Math.atan2(-tan.x, -tan.z) + Math.sin(t * 0.13) * 0.35 - this.yaw;
+        dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+        this.yaw += dy * dt * 0.25;
+        this.pitch += (Math.asin(clamp(tan.y, -1, 1)) + Math.sin(t * 0.09) * 0.15 - this.pitch) * dt * 0.25;
       }
 
       if (this.attractT > 0) {

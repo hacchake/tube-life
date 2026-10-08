@@ -19,12 +19,12 @@
       const saved = TL.Store.load(STORE_KEY, {}) || {};
       this.settings = Object.assign({
         caOn: true, speed: 7, grid: 'flower', species: 'cycle', sound: true, volume: 0.6,
-        cameraMode: 'free', ambient: true, debug: false, seed: (Math.random() * 1e9) | 0,
+        cameraMode: 'free', ambient: true, debug: false, seed: (Math.random() * 1e9) | 0, space: 'cylinder',
       }, saved);
 
       this.stage = new TL.Stage3D(document.getElementById('world'));
       this.camera = this.stage.camera;
-      this.space = new TL.CylinderSpace(RADIUS, LENGTH);
+      this.space = TL.makeSpace(this.settings.space, RADIUS, LENGTH);
       this.rngFn = TL.makeRng(this.settings.seed);
       const rng = () => this.rngFn();
 
@@ -42,7 +42,7 @@
 
       this.cameraCtl = new TL.CameraControls(this.camera, this.stage.dom, this.space);
       this.cameraCtl.mode = this.settings.cameraMode;
-      this.camera.position.set(0, -2.5, 10);
+      this.cameraCtl.setPose(this.space.startPose());
 
       this.hoverId = -1;
       this.selectedId = -1;
@@ -88,7 +88,21 @@
     // ---------- 世界の構築 ----------
 
     buildWorld(type) {
-      this.topology = TL.Topology.build(type, this.space.C, this.space.L, AROUND);
+      const kind = this.settings.space || 'cylinder';
+      const useSpace = (sp) => {
+        this.space = sp;
+        for (const m of [this.tiles, this.creatures, this.ripples, this.picker, this.cameraCtl]) m.space = sp;
+        this.cameraCtl.setPose(sp.startPose());
+      };
+      if (kind === 'branch') {
+        // 分岐: 幹と 2 本の枝の Topology を 1 つにまとめる(分かれ目は開口になり、波は枝へ伝わる)
+        if (this.space.kind !== 'branch') useSpace(TL.makeSpace('branch', RADIUS));
+        this.topology = TL.buildBranchTopology(type, this.space, AROUND);
+      } else {
+        // トーラスでは長さ方向も一周してつながる。継ぎ目が出ないよう、格子に合わせて輪の長さを決める。
+        this.topology = TL.Topology.build(type, 2 * Math.PI * RADIUS, LENGTH, AROUND, { periodicY: kind === 'torus' });
+        if (this.space.kind !== kind || Math.abs(this.space.L - this.topology.Ly) > 1e-6) useSpace(TL.makeSpace(kind, RADIUS, this.topology.Ly));
+      }
       this.ca = new TL.CAEngine(this.topology, () => this.rngFn());
       if (this.topology.waveEnergy) this.ca.energy = this.topology.waveEnergy;
       this.ca.bus.on('change', (ids) => this.tiles.markDirty(ids));
@@ -99,6 +113,14 @@
       this.ripples.clear();
       this.pendingSpawn.clear();
       this.hoverId = this.selectedId = -1;
+    }
+
+    // 空間の形(円筒 / 曲がったチューブ / トーラス)
+    setSpace(kind) {
+      this.settings.space = kind;
+      this.buildWorld(this.settings.grid);
+      this.cameraCtl.setPose(this.space.startPose());
+      this.persist();
     }
 
     setGrid(type) {
@@ -160,12 +182,16 @@
     pickTarget(fromId, speciesId) {
       const [near, far] = TL.Species.get(speciesId).range;
       const from = this.cellPos(fromId);
-      const ahead = this.cameraCtl.forward().z >= 0 ? 1 : -1;
+      // カメラが見ている側(チューブの長さ方向のどちら向きか)
+      const camY = this.space.toPlane(this.camera.position).y;
+      const ahead = this.cameraCtl.forward().dot(this.space.tangentAt(camY)) >= 0 ? 1 : -1;
       const rng = this.rngFn;
       let best = null;
       for (let k = 0; k < 14; k++) {
         const dir = rng() < 0.7 ? ahead : -ahead;
-        const y = clamp(from.y + dir * (near + rng() * (far - near)), 4, this.space.L - 4);
+        let y = from.y + dir * (near + rng() * (far - near));
+        if (this.space.pickY) y = this.space.pickY(from.y, near + rng() * (far - near), rng, TL.Species.get(speciesId).motion === 'crawl');
+        else y = this.space.periodicY ? ((y % this.space.L) + this.space.L) % this.space.L : clamp(y, 4, this.space.L - 4);
         const cell = this.topology.locate(rng() * this.topology.Lx, y);
         if (!cell || cell.id === fromId) continue;
         best = cell;
