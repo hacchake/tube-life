@@ -187,6 +187,13 @@
       this._voice(to, base + 12, 0.14, { pan, when: 0.5 });
     }
 
+    // 出会い: 2 つの音が重なって和音になる
+    encounter(pan) {
+      if (!this.enabled) return;
+      const d = Math.floor(Math.random() * 5);
+      [0, 2, 4, 7].forEach((k, i) => this._tone({ freq: mtof(this.note(d + k, 1)), vel: 0.07, attack: 0.03, dur: 2.2, pan, when: i * 0.04, vibrato: 0.006 }));
+    }
+
     // トカゲの足音(小さく乾いたクリック)
     step_(species, pan) {
       if (!this.enabled || !this.ctx || Math.random() < 0.4) return;

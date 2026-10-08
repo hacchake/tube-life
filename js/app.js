@@ -138,9 +138,18 @@
 
     // Species の設定から、最初に生まれる種と、連鎖で次に生まれる種を決める
     //   fish / bird / lizard: その種だけ    cycle: 魚 → 鳥 → トカゲ → 魚 … の順に
-    firstSpecies() { return this.settings.species === 'cycle' || this.settings.species === 'meta' ? 'fish' : this.settings.species; }
+    //   eco: 生態系。3 種がいっしょに暮らし、次の種はランダム
+    firstSpecies() {
+      const m = this.settings.species;
+      if (m === 'eco') return ['fish', 'bird', 'lizard'][Math.floor(this.rngFn() * 3)];
+      return m === 'cycle' || m === 'meta' ? 'fish' : m;
+    }
     nextSpecies(prev) {
       if (this.settings.species === 'meta') return 'fish';
+      if (this.settings.species === 'eco') {
+        const others = ['fish', 'bird', 'lizard'].filter((s) => s !== prev);
+        return others[Math.floor(this.rngFn() * others.length)];
+      }
       if (this.settings.species !== 'cycle') return this.settings.species;
       const order = ['fish', 'bird', 'lizard'];
       return order[(order.indexOf(prev) + 1) % order.length];
@@ -222,7 +231,9 @@
       this.cameraCtl.attract(this.worldOf(id), 0.12);
       // 連鎖: 深くなるほど続きにくい。広がった波の中から次の生物が生まれる。
       if (this.rngFn() < 0.92 * Math.pow(0.8, chain)) {
-        this.pendingSpawn.set(id, { chain: chain + 1, species: this.nextSpecies(creature.species.id) });
+        const eco = this.settings.species === 'eco';
+        const count = eco && this.rngFn() < 0.45 ? 2 : 1;
+        this.pendingSpawn.set(id, { chain: chain + 1, species: this.nextSpecies(creature.species.id), count, last: creature.species.id });
       }
     }
 
@@ -233,8 +244,46 @@
         const p = this.pendingSpawn.get(c.origin);
         if (!p || (c.generation < 2 && c.id !== c.origin)) continue;
         if (c.id === c.origin && this.ca.cells.some((o) => o.origin === c.origin && o.generation >= 2 && o.state >= TL.ST.ACTIVATING && o.state <= TL.ST.GROWING)) continue;
-        this.pendingSpawn.delete(c.origin);
+        p.count = (p.count || 1) - 1;
+        if (p.count <= 0) this.pendingSpawn.delete(c.origin);
+        // 生態系ではときどき、変態しながら生きる個体が生まれる
+        if (this.settings.species === 'eco' && this.rngFn() < 0.15 && !this.topology.cells[c.id].species) {
+          const mid = this.pickTarget(c.id, 'bird'), to = mid && this.pickTarget(mid.id, 'lizard');
+          const p0 = this.cellPos(c.id);
+          if (to) { this.creatures.spawnMeta({ id: c.id, x: p0.x, y: p0.y }, { id: mid.id, x: mid.position.x, y: mid.position.y }, { id: to.id, x: to.position.x, y: to.position.y }, { chain: p.chain }); continue; }
+        }
         this.spawnFrom(c.id, p.chain, p.species);
+        if (p.count > 0) p.species = this.nextSpecies(p.species); // 2 匹目は別の種
+      }
+    }
+
+    // 生物どうしの出会い: 移動中の 2 匹が近づくと、真下の壁に新しい生命が生まれる
+    encounters(dt) {
+      this.meetT = (this.meetT || 0) - dt;
+      if (this.meetT > 0) return;
+      this.meetT = 0.25;
+      const list = this.creatures.active.filter((c) => c.phase === 'travel' || c.phase === 'meta-travel' || c.phase === 'meta-crawl');
+      for (let i = 0; i < list.length; i++) {
+        for (let j = i + 1; j < list.length; j++) {
+          const a = list[i], b = list[j];
+          const key = a.mesh.id + ':' + b.mesh.id;
+          if (this.met && this.met.has(key)) continue;
+          if (a.mesh.position.distanceTo(b.mesh.position) > 2.2) continue;
+          (this.met = this.met || new Set()).add(key);
+          const mid = a.mesh.position.clone().add(b.mesh.position).multiplyScalar(0.5);
+          const pl = this.space.toPlane(mid);
+          const cell = this.topology.locate(pl.x, pl.y);
+          if (!cell) continue;
+          const seeded = this.ca.seed(cell.id, { species: a.species.id, energy: 4, chain: Math.max(a.chain, b.chain) + 1, source: 'encounter' });
+          if (seeded) {
+            this.tiles.flash(cell.id, 1.6, '#ffffff');
+            this.ripples.spawn(pl.x, pl.y, 0xffffff, 4, 1.4);
+            this.audio.encounter(this.panOf(seeded));
+            this.cameraCtl.attract(mid, 0.12);
+          }
+          this.meetT = 2.5; // 出会いは続けて起こりすぎないように
+          return;
+        }
       }
     }
 
@@ -244,7 +293,8 @@
       this.nextAmbient -= dt;
       if (this.nextAmbient > 0) return;
       this.nextAmbient = 7 + this.rngFn() * 7;
-      if (this.cameraCtl.idleFor < 5 || this.creatures.count > 2 || this.ca.activeCount > 60) return;
+      const crowd = this.settings.species === 'eco' ? 5 : 2;
+      if (this.cameraCtl.idleFor < 5 || this.creatures.count > crowd || this.ca.activeCount > 60) return;
       const h = this.picker.pickNdc((this.rngFn() - 0.5) * 1.3, (this.rngFn() - 0.5) * 1.1);
       if (h) this.activate(h.cell.id, 'ambient');
     }
@@ -262,6 +312,7 @@
         while (this.acc >= stepT && n < 3) { this.ca.step(); this.acc -= stepT; n++; }
         if (n >= 3) this.acc = 0;
         this.ambient(dt);
+        this.encounters(dt);
       }
       this.cameraCtl.update(dt);
       this.creatures.update(dt); // 生物は CA 停止中も動く
@@ -279,6 +330,7 @@
           this.acc += dt;
           const stepT = 1 / this.settings.speed;
           while (this.acc >= stepT) { this.ca.step(); this.acc -= stepT; }
+          this.encounters(dt);
         }
         this.creatures.update(dt);
         this.tiles.update(dt, this.ca.cells);
