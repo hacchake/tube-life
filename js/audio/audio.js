@@ -84,7 +84,14 @@
       comp.threshold.value = -20; comp.knee.value = 10; comp.ratio.value = 3.5; comp.attack.value = 0.01; comp.release.value = 0.3;
       const limit = ctx.createDynamicsCompressor();
       limit.threshold.value = -3; limit.ratio.value = 20; limit.attack.value = 0.002;
-      this.master.connect(comp); comp.connect(limit); limit.connect(ctx.destination);
+      // 最後の安全装置: 上限を超えそうな所を tanh でなめらかに丸める(デジタルの割れを出さない)
+      const soft = ctx.createWaveShaper();
+      const curve = new Float32Array(2048);
+      for (let i = 0; i < curve.length; i++) { const x = (i / (curve.length - 1)) * 2 - 1; curve[i] = Math.tanh(x * 1.4) / Math.tanh(1.4); }
+      soft.curve = curve;
+      soft.oversample = '4x';
+      const pre = ctx.createGain(); pre.gain.value = 0.8;
+      this.master.connect(comp); comp.connect(limit); limit.connect(pre); pre.connect(soft); soft.connect(ctx.destination);
 
       // 全体の明るさ(生命が多いほど開く)
       this.tone = ctx.createBiquadFilter();
@@ -216,10 +223,37 @@
       g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     }
 
-    _done(nodes, out, t, end) {
+    _done(nodes, out, t, end, tag = '') {
       this.voices++;
       for (const n of nodes) { n.start(t); n.stop(end + 0.05); }
-      setTimeout(() => { this.voices--; out.disconnect(); }, (end - this.ctx.currentTime) * 1000 + 300);
+      const rec = { out, nodes, t, end, tag };
+      (this.live = this.live || []).push(rec);
+      setTimeout(() => {
+        this.voices--;
+        out.disconnect();
+        const i = this.live.indexOf(rec);
+        if (i >= 0) this.live.splice(i, 1);
+      }, (end - this.ctx.currentTime) * 1000 + 300);
+    }
+
+    // 種類 tag の声のうち、まだ鳴っているものの数
+    _liveCount(tag) {
+      const now = this.ctx.currentTime;
+      return (this.live || []).filter((r) => r.tag === tag && r.end > now && !r.stolen).length;
+    }
+
+    // 声が max を超えそうなら、いちばん古い声を短くフェードアウトさせて席を空ける
+    _steal(tag, max) {
+      const now = this.ctx.currentTime;
+      const list = (this.live || []).filter((r) => r.tag === tag && r.end > now && !r.stolen).sort((a, b) => a.t - b.t);
+      while (list.length >= max) {
+        const r = list.shift();
+        r.stolen = true;
+        const g = r.out.gain;
+        if (g.cancelAndHoldAtTime) g.cancelAndHoldAtTime(now); else { g.cancelScheduledValues(now); g.setValueAtTime(g.value, now); }
+        g.linearRampToValueAtTime(0.0001, now + 0.12);
+        for (const n of r.nodes) { try { n.stop(now + 0.15); } catch (e) { /* もう止まっている */ } }
+      }
     }
 
     _ok() { return this.ensure() && this.voices <= 40; }
@@ -264,6 +298,8 @@
     // 母音の 3 つの帯域を並べて通す。帯域で削れる分だけ音量を補う。
     _voiceChoir(f, vel, where, when, { dur = 2.6, attack = 0.25, vowel = 'a' } = {}) {
       if (!this._ok()) return;
+      this._steal('choir', 6);
+      vel /= Math.sqrt(1 + this._liveCount('choir') * 0.6); // 重なるほど 1 つずつを小さく(合計が膨らみすぎない)
       const ctx = this.ctx, t = ctx.currentTime + 0.01 + when;
       const out = this._out(where);
       // 鳴り始め → 伸ばす → ゆっくり消える(声らしい形)
@@ -306,7 +342,7 @@
       const bg = ctx.createGain(); bg.gain.value = 0.05;
       br.connect(bf); bf.connect(bg); bg.connect(out);
       nodes.push(br);
-      this._done(nodes, out, t, t + dur);
+      this._done(nodes, out, t, t + dur, 'choir');
     }
 
     // サイン波の音(ソナー・低音)。glide で音程が滑る
