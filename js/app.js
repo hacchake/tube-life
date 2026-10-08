@@ -90,6 +90,7 @@
     buildWorld(type) {
       this.topology = TL.Topology.build(type, this.space.C, this.space.L, AROUND);
       this.ca = new TL.CAEngine(this.topology, () => this.rngFn());
+      if (this.topology.waveEnergy) this.ca.energy = this.topology.waveEnergy;
       this.ca.bus.on('change', (ids) => this.tiles.markDirty(ids));
       this.ca.bus.on('step', (ev) => this.onStep(ev));
       this.tiles.build(this.topology);

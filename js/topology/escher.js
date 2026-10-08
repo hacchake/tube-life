@@ -132,13 +132,13 @@
   }
 
   // ---------- Topology として登録 ----------
-  function build(species, Lx, Ly, around) {
+  function build(species, Lx, Ly, around, opts) {
     const p = proto(species);
-    const T = new TL.Topology('escher-' + species, Lx, Ly);
+    const T = new TL.Topology('escher-' + species, Lx, Ly, !!opts.periodicY);
     if (p.lattice === 'square') {
       const s = Lx / around;
       T.cellSize = s;
-      const rows = Math.floor(Ly / s);
+      const rows = T.rowsFor(s);
       for (let j = 0; j < rows; j++) {
         for (let i = 0; i < around; i++) {
           const x = (i + 0.5) * s, y = (j + 0.5) * s;
@@ -154,7 +154,7 @@
       const s = Lx / (around * p.w);
       T.cellSize = s * p.w;
       const rowH = p.b[1] * s;
-      const rows = Math.floor(Ly / rowH);
+      const rows = T.rowsFor(rowH); // トーラスでは偶数行(行のずれが一周で戻る)
       for (let j = 0; j < rows; j++) {
         for (let i = 0; i < around; i++) {
           const x = (i * p.a[0] + j * p.b[0]) * s + p.w * s * 0.5, y = (j + 0.5) * rowH;
@@ -174,7 +174,7 @@
   }
 
   for (const [id, name] of [['fish', 'Escher: Fish'], ['bird', 'Escher: Bird'], ['lizard', 'Escher: Lizard']]) {
-    TL.Topology.register('escher-' + id, name, (Lx, Ly, around) => build(id, Lx, Ly, Math.max(6, Math.round(around * (id === 'lizard' ? 0.62 : 0.8)))));
+    TL.Topology.register('escher-' + id, name, (Lx, Ly, around, opts) => build(id, Lx, Ly, Math.max(6, Math.round(around * (id === 'lizard' ? 0.62 : 0.8))), opts));
   }
 
   // タイルの輪郭を、生物の 3D 化に使える形にする(長さ 1、頭が +X)。
